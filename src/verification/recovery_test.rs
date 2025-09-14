@@ -1,8 +1,7 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Result};
 use rand::RngCore;
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom};
-use sha2::{Sha256, Digest};
 
 pub struct RecoveryTest;
 

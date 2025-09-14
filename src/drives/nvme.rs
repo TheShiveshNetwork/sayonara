@@ -8,7 +8,7 @@ impl NVMeWipe {
         println!("Starting NVMe secure erase on {}", device_path);
         
         // Get NVMe device info
-        let device_info = Self::get_nvme_info(device_path)?;
+        let _device_info = Self::get_nvme_info(device_path)?;
         
         // Check if Format NVM command is supported
         if Self::supports_format_nvm(device_path)? {

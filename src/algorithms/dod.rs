@@ -33,7 +33,7 @@ impl DoDWipe {
         file.seek(SeekFrom::Start(0))?;
         
         const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
-        let mut buffer = vec![pattern[0]; BUFFER_SIZE];
+        let buffer = vec![pattern[0]; BUFFER_SIZE];
         
         let mut bytes_written = 0u64;
         

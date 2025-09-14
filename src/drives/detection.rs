@@ -1,5 +1,5 @@
 use crate::{DriveInfo, DriveType, EncryptionStatus};
-use anyhow::{Result, anyhow};
+use anyhow::{Result};
 use std::process::Command;
 use std::fs;
 

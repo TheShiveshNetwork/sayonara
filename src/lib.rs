@@ -4,7 +4,6 @@ pub mod algorithms;
 pub mod verification;
 pub mod crypto;
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
