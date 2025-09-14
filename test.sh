@@ -189,17 +189,3 @@ echo "=================================================="
 echo -e "${GREEN}    TESTING COMPLETED${NC}"
 echo "=================================================="
 echo
-echo "Summary:"
-echo "  • Project builds successfully"
-echo "  • Drive detection functional"
-echo "  • Wipe algorithms working"
-echo "  • Certificate generation operational"
-echo "  • Verification system active"
-echo
-echo "Next steps:"
-echo "  1. Test on real hardware (with extreme caution!)"
-echo "  2. Integrate with your web dashboard"
-echo "  3. Connect to blockchain certificate storage"
-echo "  4. Add AI guidance integration"
-echo
-echo "For SIH demo: This test suite proves your core functionality!"
