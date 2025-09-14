@@ -1,0 +1,16 @@
+{
+  "name": "secure-chatbot",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "chatbot.js",
+  "scripts": {
+    "start": "node chatbot.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.8.0",
+    "readline-sync": "^1.4.10"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
