@@ -8,9 +8,9 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.8.0",
+    "@langchain/google-genai": "^0.2.17",
+    "dotenv": "^17.2.2",
+    "langchain": "^0.3.33",
     "readline-sync": "^1.4.10"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  }
 }
