@@ -1,0 +1,8 @@
+# Node
+dist/
+build/
+*.local
+
+# OS files
+.DS_Store
+Thumbs.db
