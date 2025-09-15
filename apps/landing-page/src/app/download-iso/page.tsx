@@ -148,7 +148,7 @@ export default function DownloadISOPage() {
               <div className="bg-card rounded-2xl p-8 border border-border">
                 <h2 className="text-2xl font-semibold mb-8 text-center">How to Use the ISO</h2>
                 <div className="grid md:grid-cols-4 gap-6">
-                  {steps.map((step, index) => (
+                  {steps.map((step) => (
                     <div key={step.number} className="text-center space-y-4">
                       <div className="gradient-primary w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg mx-auto">
                         {step.number}

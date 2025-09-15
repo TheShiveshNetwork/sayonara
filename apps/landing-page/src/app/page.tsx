@@ -1,4 +1,3 @@
-import { BentoDemo } from "@/components/bento-features";
 import Features from "@/components/features";
 import Hero from "@/components/hero";
 

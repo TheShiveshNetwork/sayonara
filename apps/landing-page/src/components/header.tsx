@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Hand, Shield } from "lucide-react";
 import Link from "next/link";
 
 const Header = () => {

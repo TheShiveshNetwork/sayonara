@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Download, Monitor, Smartphone } from "lucide-react";
+import Image from "next/image";
 
 export default function DownloadAppPage() {
     const platforms = [
@@ -53,7 +54,7 @@ export default function DownloadAppPage() {
                     style={{ animationDelay: `${index * 200}ms` }}
                   >
                     <div className="aspect-video overflow-hidden">
-                      <img 
+                      <Image 
                         src={platform.screenshot} 
                         alt={`${platform.name} Screenshot`}
                         className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
