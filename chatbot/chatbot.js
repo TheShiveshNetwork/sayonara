@@ -1,4 +1,7 @@
-import 'dotenv/config';
+import dotenv from "dotenv";
+
+dotenv.config({ path: "../.env.local" })
+
 import readlineSync from 'readline-sync';
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
