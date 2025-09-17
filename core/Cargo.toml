@@ -16,3 +16,6 @@ ring = "0.16"
 x509-parser = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
