@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 
 const CAT_FRAMES: [&str; 6] = [
     "ฅ(^･ω･^=)  ", // cat happy
@@ -18,7 +18,6 @@ pub struct ProgressBar {
     cat_frame: usize,
     paw_frame: usize,
     start: Instant,
-    last_bytes: u64,
     first_render: bool,
 }
 
@@ -31,7 +30,6 @@ impl ProgressBar {
             cat_frame: 0,
             paw_frame: 0,
             start: Instant::now(),
-            last_bytes: 0,
             first_render: true,
         }
     }
@@ -89,11 +87,11 @@ impl ProgressBar {
         ) + &bar_empty + reset;
 
         // Speed and ETA
-        let mut info = String::new();
+        let _info = String::new();
 
-        if let (Some(written), Some(total)) = (bytes_written, total_bytes) {
+        let info = if let (Some(written), Some(total)) = (bytes_written, total_bytes) {
             let elapsed = self.start.elapsed().as_secs_f64().max(0.0001);
-            let speed = (written as f64) / elapsed; // bytes/sec
+            let speed = (written as f64) / elapsed;
             let speed_readable = human_bytes(speed);
             let remaining = if total > written { total - written } else { 0 };
             let eta_secs = if speed > 0.0 {
@@ -103,18 +101,14 @@ impl ProgressBar {
             };
             let eta = format_duration(eta_secs);
 
-            info = format!(
+            format!(
                 "{}{:.1}%{}  {} @ {}/s  ETA {}",
                 bold, pct, reset, cyan, speed_readable, eta
-            );
-
-            // stash last_bytes
-            self.last_bytes = written;
+            )
         } else {
-            // when bytes not provided, show an animated status
             let paw = PAW_FRAMES[self.paw_frame];
-            info = format!("{}{:.1}%{}  {}working...{}", bold, pct, reset, cyan, paw);
-        }
+            format!("{}{:.1}%{}  {}working...{}", bold, pct, reset, cyan, paw)
+        };
 
         // Clear previous lines if we've printed before
         if self.first_render {

@@ -86,7 +86,7 @@ impl RecoveryTest {
 
         let mut counts = [0u64; 256];
         let mut processed = 0usize;
-        for (i, &byte) in buffer.iter().enumerate() {
+        for (_i, &byte) in buffer.iter().enumerate() {
             counts[byte as usize] += 1;
             processed += 1;
             if processed % (buffer.len() / 50).max(1) == 0 {
