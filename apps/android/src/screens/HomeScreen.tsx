@@ -7,6 +7,7 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 const HomeScreen = () => {
@@ -37,58 +38,84 @@ const HomeScreen = () => {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Icon name="security" size={60} color="#e91e63" />
-        <Text style={styles.title}>SecureWipe</Text>
-        <Text style={styles.subtitle}>Professional Data Erasure Tool</Text>
-      </View>
-
-      <View style={styles.buttonsContainer}>
-        <TouchableOpacity style={styles.customWipeButton} onPress={handleCustomWipe}>
-          <View style={styles.buttonContent}>
-            <Icon name="cleaning-services" size={40} color="#fff" />
-            <Text style={styles.buttonTitle}>Custom Wipe</Text>
-            <Text style={styles.buttonDescription}>
-              Selectively erase specific files and directories
-            </Text>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['rgba(10,10,10,0.8)', 'rgba(26,47,26,0.6)', 'rgba(42,74,42,0.4)', 'rgba(26,58,26,0.6)', 'rgba(10,10,10,0.8)']}
+        locations={[0, 0.2, 0.4, 0.7, 1]}
+        style={styles.gradientBackground}
+      >
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.header}>
+            <Icon name="security" size={60} color="#4ade80" />
+            <Text style={styles.title}>SecureWipe</Text>
+            <Text style={styles.subtitle}>Professional Data Erasure Tool</Text>
           </View>
-        </TouchableOpacity>
 
-        <TouchableOpacity style={styles.completeWipeButton} onPress={handleCompleteWipe}>
-          <View style={styles.buttonContent}>
-            <Icon name="delete-forever" size={40} color="#fff" />
-            <Text style={styles.buttonTitle}>Complete Wipe</Text>
-            <Text style={styles.buttonDescription}>
-              Permanently erase all data on device
-            </Text>
+          <View style={styles.buttonsContainer}>
+            <TouchableOpacity onPress={handleCustomWipe}>
+              <LinearGradient
+                colors={['rgba(59, 130, 246, 0.9)', 'rgba(37, 99, 235, 0.9)']}
+                style={styles.customWipeButton}
+              >
+                <View style={styles.buttonContent}>
+                  <Icon name="cleaning-services" size={40} color="#fff" />
+                  <Text style={styles.buttonTitle}>Custom Wipe</Text>
+                  <Text style={styles.buttonDescription}>
+                    Selectively erase specific files and directories
+                  </Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={handleCompleteWipe}>
+              <LinearGradient
+                colors={['rgba(239, 68, 68, 0.9)', 'rgba(220, 38, 38, 0.9)']}
+                style={styles.completeWipeButton}
+              >
+                <View style={styles.buttonContent}>
+                  <Icon name="delete-forever" size={40} color="#fff" />
+                  <Text style={styles.buttonTitle}>Complete Wipe</Text>
+                  <Text style={styles.buttonDescription}>
+                    Permanently erase all data on device
+                  </Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-      </View>
 
-      <View style={styles.infoSection}>
-        <Text style={styles.infoTitle}>Security Features</Text>
-        <View style={styles.featureItem}>
-          <Icon name="verified" size={24} color="#4caf50" />
-          <Text style={styles.featureText}>DoD 5220.22-M Standard</Text>
-        </View>
-        <View style={styles.featureItem}>
-          <Icon name="lock" size={24} color="#4caf50" />
-          <Text style={styles.featureText}>Multiple Pass Overwriting</Text>
-        </View>
-        <View style={styles.featureItem}>
-          <Icon name="shield" size={24} color="#4caf50" />
-          <Text style={styles.featureText}>Forensic-Proof Deletion</Text>
-        </View>
-      </View>
-    </ScrollView>
+          <View style={styles.infoSection}>
+            <Text style={styles.infoTitle}>Security Features</Text>
+            <View style={styles.featureItem}>
+              <Icon name="verified" size={24} color="#4ade80" />
+              <Text style={styles.featureText}>DoD 5220.22-M Standard</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <Icon name="lock" size={24} color="#4ade80" />
+              <Text style={styles.featureText}>Multiple Pass Overwriting</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <Icon name="shield" size={24} color="#4ade80" />
+              <Text style={styles.featureText}>Forensic-Proof Deletion</Text>
+            </View>
+          </View>
+        </ScrollView>
+      </LinearGradient>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+  },
+  gradientBackground: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 100,
   },
   header: {
     alignItems: 'center',
@@ -103,7 +130,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: '#888',
+    color: 'rgba(255,255,255,0.8)',
     marginTop: 8,
     textAlign: 'center',
   },
@@ -112,21 +139,19 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   customWipeButton: {
-    backgroundColor: '#2196f3',
     borderRadius: 16,
     padding: 24,
     elevation: 8,
-    shadowColor: '#2196f3',
+    shadowColor: '#3b82f6',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
   completeWipeButton: {
-    backgroundColor: '#f44336',
     borderRadius: 16,
     padding: 24,
     elevation: 8,
-    shadowColor: '#f44336',
+    shadowColor: '#ef4444',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -150,8 +175,10 @@ const styles = StyleSheet.create({
   infoSection: {
     margin: 20,
     padding: 20,
-    backgroundColor: '#1e1e1e',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.3)',
   },
   infoTitle: {
     fontSize: 20,

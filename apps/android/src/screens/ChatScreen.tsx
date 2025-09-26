@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 interface Message {
@@ -73,7 +74,9 @@ const ChatScreen = () => {
     <View style={[styles.messageContainer, item.isUser ? styles.userMessage : styles.botMessage]}>
       <View style={[styles.messageBubble, item.isUser ? styles.userBubble : styles.botBubble]}>
         {!item.isUser && (
-          <Icon name="smart-toy" size={20} color="#e91e63" style={styles.botIcon} />
+          <View style={styles.avatarContainer}>
+            <Icon name="smart-toy" size={20} color="#4ade80" />
+          </View>
         )}
         <Text style={[styles.messageText, item.isUser ? styles.userText : styles.botText]}>
           {item.text}
@@ -86,40 +89,61 @@ const ChatScreen = () => {
   );
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <FlatList
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={item => item.id}
-        style={styles.messagesList}
-        contentContainerStyle={styles.messagesContainer}
-      />
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['rgba(10,10,10,0.8)', 'rgba(26,47,26,0.6)', 'rgba(42,74,42,0.4)', 'rgba(26,58,26,0.6)', 'rgba(10,10,10,0.8)']}
+        locations={[0, 0.2, 0.4, 0.7, 1]}
+        style={styles.gradientBackground}
+      >
+        <KeyboardAvoidingView
+          style={styles.keyboardContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <FlatList
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={item => item.id}
+            style={styles.messagesList}
+            contentContainerStyle={styles.messagesContainer}
+            showsVerticalScrollIndicator={false}
+          />
 
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.textInput}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Ask about secure data wiping..."
-          placeholderTextColor="#888"
-          multiline
-          maxLength={500}
-        />
-        <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
-          <Icon name="send" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+          <View style={styles.inputContainer}>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.textInput}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder="Ask about secure data wiping..."
+                placeholderTextColor="rgba(255,255,255,0.6)"
+                multiline
+                maxLength={500}
+              />
+              <TouchableOpacity style={styles.sendButtonContainer} onPress={sendMessage}>
+                <LinearGradient
+                  colors={['#4ade80', '#22c55e']}
+                  style={styles.sendButton}
+                >
+                  <Icon name="send" size={20} color="#000" />
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </LinearGradient>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+  },
+  gradientBackground: {
+    flex: 1,
+  },
+  keyboardContainer: {
+    flex: 1,
   },
   messagesList: {
     flex: 1,
@@ -145,55 +169,72 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   userBubble: {
-    backgroundColor: '#e91e63',
+    backgroundColor: 'rgba(74, 222, 128, 0.9)',
     borderBottomRightRadius: 4,
   },
   botBubble: {
-    backgroundColor: '#1e1e1e',
+    backgroundColor: 'rgba(30, 30, 30, 0.9)',
     borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.3)',
   },
-  botIcon: {
+  avatarContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(30, 30, 30, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 8,
     marginTop: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.5)',
   },
   messageText: {
     fontSize: 16,
     flex: 1,
   },
   userText: {
-    color: '#fff',
+    color: '#000',
+    fontWeight: '500',
   },
   botText: {
     color: '#fff',
   },
   timestamp: {
     fontSize: 12,
-    color: '#888',
+    color: 'rgba(255,255,255,0.6)',
     marginTop: 4,
     marginHorizontal: 8,
   },
   inputContainer: {
-    flexDirection: 'row',
     padding: 16,
-    backgroundColor: '#1a1a1a',
+    paddingBottom: Platform.OS === 'ios' ? 85 : 65,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
     alignItems: 'flex-end',
+    backgroundColor: 'rgba(26, 26, 26, 0.9)',
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.3)',
   },
   textInput: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#333',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 12,
     color: '#fff',
-    backgroundColor: '#2a2a2a',
+    fontSize: 16,
     maxHeight: 100,
+    paddingVertical: 8,
+  },
+  sendButtonContainer: {
+    marginLeft: 12,
   },
   sendButton: {
-    backgroundColor: '#e91e63',
-    borderRadius: 20,
-    padding: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
   },
