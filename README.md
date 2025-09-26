@@ -1,267 +1,310 @@
-# Sayonara Wipe - Secure Data Wiping Tool
+# Sayonara Wipe - Advanced Secure Data Erasure Tool
 
-**SIH 2025 - Team Sayonara**
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
-A comprehensive secure data wiping solution built in Rust that provides military-grade data destruction with cryptographic verification and compliance certification.
+A production-ready, comprehensive secure data wiping tool with advanced hardware support, developed for SIH 2025.
 
-## Features
+## 🚀 Features
 
-### Core Wiping Algorithms
-- **DoD 5220.22-M**: 3-pass Department of Defense standard (zeros, ones, random)
-- **Gutmann Method**: 35-pass algorithm for maximum security
-- **Random Wipe**: Single-pass cryptographically secure random overwrite
-- **Hardware Secure Erase**: Native SSD/NVMe secure erase commands
+### Core Capabilities
+- **Multiple Wiping Algorithms**
+   - DoD 5220.22-M (3-pass)
+   - Gutmann (35-pass)
+   - Random data overwrite
+   - Zero overwrite
+   - Hardware secure erase
+   - Cryptographic erase (SED)
+   - NVMe sanitize
+   - TRIM-only for SSDs
 
-### Drive Support
-- **SSD**: Hardware secure erase via ATA commands
-- **NVMe**: Format NVM and Sanitize operations
-- **HDD**: Software and hardware secure erase methods
-- **USB**: Standard wiping algorithms
-- **Encrypted Drives**: LUKS, BitLocker, and OPAL detection
+### Advanced Hardware Support
+- **Drive Freeze Mitigation**
+   - Automatic detection of frozen drives
+   - Multiple unfreezing strategies
+   - BIOS freeze bypass techniques
 
-### Security Features
-- **Verification System**: Post-wipe recovery testing with entropy analysis
-- **Digital Certificates**: Cryptographically signed wipe certificates
-- **Bootable Environment**: Isolated Linux environment for secure operations
-- **Chain of Custody**: Detailed logging and audit trails
+- **Hidden Area Detection & Management**
+   - Host Protected Area (HPA) detection
+   - Device Configuration Overlay (DCO) detection
+   - Temporary or permanent removal options
+   - Safe restoration after wiping
 
-## Architecture
+- **Self-Encrypting Drive (SED) Support**
+   - OPAL 2.0/1.0 compliance
+   - TCG Enterprise support
+   - Instant cryptographic erase
+   - Password management
 
-```
-sayonara-wipe/
-├── bootable/           # Bootable ISO generation
-├── src/
-│   ├── algorithms/     # Wiping algorithms (DoD, Gutmann, Random)
-│   ├── drives/         # Drive detection and hardware-specific operations
-│   ├── verification/   # Post-wipe verification and recovery testing
-│   ├── crypto/         # Certificate generation and cryptographic operations
-│   ├── lib.rs         # Core data structures and types
-│   └── main.rs        # CLI interface and main application logic
-└── Cargo.toml         # Dependencies and build configuration
-```
+- **TRIM/Discard Operations**
+   - Full-drive TRIM after secure erase
+   - Effectiveness verification
+   - Multi-pass TRIM for security
 
-## Installation
+- **Temperature Monitoring**
+   - Real-time temperature tracking
+   - Automatic cooling periods
+   - Thermal throttling prevention
+
+- **Health Monitoring**
+   - SMART attribute analysis
+   - Failure prediction
+   - Pre-wipe health checks
+
+### Safety Features
+- System drive protection
+- Mounted drive detection
+- RAID member detection
+- Confirmation prompts
+- Rollback capabilities for HPA/DCO
+
+## 📦 Installation
 
 ### Prerequisites
-- Rust 1.70+ with `x86_64-unknown-linux-musl` target
-- Linux system with root privileges
-- Required system tools: `smartctl`, `hdparm`, `nvme`, `cryptsetup`, `sedutil-cli`
+- Linux kernel 5.4+ (for full feature support)
+- Root/sudo access
+- Required system tools:
+   - `smartctl` (smartmontools)
+   - `hdparm`
+   - `nvme-cli` (for NVMe drives)
+   - `sg3_utils` (optional, for SCSI)
+   - `sedutil-cli` (optional, for OPAL)
 
 ### Build from Source
 ```bash
-# Clone repository
-git clone <repository-url>
+# Clone the repository
+git clone https://github.com/yourusername/sayonara-wipe.git
 cd sayonara-wipe
 
-# Add musl target for static compilation
-rustup target add x86_64-unknown-linux-musl
+# Build the project
+cargo build --release
 
-# Build release binary
-cargo build --release --target x86_64-unknown-linux-musl
-
-# Install system dependencies (Ubuntu/Debian)
-sudo apt install smartmontools hdparm nvme-cli cryptsetup-bin
-
-# Build bootable ISO (optional)
-./bootable/build_iso.sh
+# Install system-wide (optional)
+sudo cp target/release/sayonara /usr/local/bin/
 ```
 
-## Usage
+## 🔧 Usage
 
-### Command Line Interface
+### Basic Commands
 
-#### List Available Drives
+#### List all drives with capabilities
 ```bash
-sudo ./target/x86_64-unknown-linux-musl/release/sayonara-wipe list
+sudo sayonara list --detailed
 ```
 
-#### Wipe a Drive
+#### Wipe a single drive with automatic best method
 ```bash
-# DoD 3-pass wipe with verification
-sudo ./sayonara-wipe wipe /dev/sda --algorithm dod --cert-output wipe_cert.json
-
-# Hardware secure erase (SSD/NVMe)
-sudo ./sayonara-wipe wipe /dev/nvme0n1 --algorithm secure
-
-# Skip verification (faster)
-sudo ./sayonara-wipe wipe /dev/sdb --no-verify
+sudo sayonara wipe /dev/sda --algorithm auto
 ```
 
-#### Verify Previous Wipe
+#### Wipe with specific algorithm
 ```bash
-sudo ./sayonara-wipe verify /dev/sda
+sudo sayonara wipe /dev/sda --algorithm dod --cert-output certificate.json
 ```
 
-### Bootable Environment
-
-1. **Create Bootable Media**:
-   ```bash
-   ./bootable/build_iso.sh
-   dd if=sayonara-wipe.iso of=/dev/sdX bs=4M status=progress
-   ```
-
-2. **Boot from USB/DVD** and use the interactive shell:
-   ```bash
-   sayonara-wipe list
-   sayonara-wipe wipe /dev/sda
-   poweroff
-   ```
-
-## Algorithms
-
-### DoD 5220.22-M (Default)
-- **Pass 1**: Overwrite with zeros (0x00)
-- **Pass 2**: Overwrite with ones (0xFF)
-- **Pass 3**: Overwrite with random data
-- **Compliance**: US Department of Defense standard
-- **Time**: ~3x drive capacity write time
-
-### Gutmann Method
-- **Passes**: 35 specialized patterns
-- **Security**: Maximum theoretical security for older drives
-- **Time**: ~35x drive capacity write time
-- **Use Case**: Ultra-high security requirements
-
-### Hardware Secure Erase
-- **SSD**: ATA Security Erase command
-- **NVMe**: Format NVM or Sanitize operations
-- **Speed**: Fastest option (seconds to minutes)
-- **Security**: Cryptographic key destruction
-
-## Security Features
-
-### Verification System
-The verification module performs comprehensive post-wipe analysis:
-
-- **Entropy Analysis**: Shannon entropy calculation to detect patterns
-- **Recovery Testing**: Attempts to recover data from random sectors
-- **Pattern Detection**: Identifies remnants of common file signatures
-- **Compliance Scoring**: Generates security score based on multiple factors
-
-### Digital Certificates
-Each wipe operation generates a cryptographically signed certificate containing:
-
-```json
-{
-  "certificate_id": "uuid",
-  "device_info": {
-    "device_path": "/dev/sda",
-    "model": "Samsung SSD 980",
-    "serial": "S123456789",
-    "size": 1000204886016,
-    "device_hash": "sha256_hash"
-  },
-  "wipe_details": {
-    "algorithm_used": "dod",
-    "passes_completed": 3,
-    "duration_seconds": 3600
-  },
-  "verification": {
-    "verified": true,
-    "entropy_score": 7.95,
-    "recovery_test_passed": true
-  },
-  "timestamp": "2025-01-15T10:30:00Z",
-  "signature": "cryptographic_signature"
-}
-```
-
-## Safety Features
-
-### Confirmation System
-- Interactive confirmation required for destructive operations
-- Drive information displayed before wiping
-- Type "YES" requirement prevents accidental wipes
-
-### Drive Detection
-- Automatic detection of drive type (SSD/HDD/NVMe/USB)
-- Encryption status identification (LUKS, BitLocker, OPAL)
-- Model and serial number verification
-
-### Error Handling
-- Comprehensive error checking and reporting
-- Graceful handling of frozen drives and permission issues
-- Progress indicators and status updates
-
-## Compliance Standards
-
-- **DoD 5220.22-M**: US Department of Defense data sanitization
-- **NIST SP 800-88**: National Institute of Standards guidelines
-- **Common Criteria**: Security evaluation standard compatibility
-- **Chain of Custody**: Full audit trail maintenance
-
-## Development
-
-### Project Structure
-- `algorithms/`: Implements various wiping methods
-- `drives/`: Hardware-specific operations and detection
-- `verification/`: Post-wipe validation and testing
-- `crypto/`: Certificate generation and cryptographic functions
-
-### Key Dependencies
-- `tokio`: Async runtime for concurrent operations
-- `clap`: Command-line argument parsing
-- `serde`: Serialization for certificates and configuration
-- `rand`: Cryptographically secure random number generation
-- `sha2`: SHA-256 hashing for certificates and verification
-- `chrono`: Timestamp handling
-- `anyhow`: Error handling and propagation
-
-## Common Use Cases
-
-### Data Center Decommissioning
+#### Handle hidden areas
 ```bash
-# Wipe all drives except management interface
-sudo ./sayonara-wipe wipe-all --exclude "/dev/sda" --cert-dir ./decommission_certs
+# Detect only (default)
+sudo sayonara wipe /dev/sda --hpa-dco detect
 
-# Generate compliance report
-ls ./decommission_certs/
+# Temporarily remove during wipe
+sudo sayonara wipe /dev/sda --hpa-dco remove-temp
+
+# Permanently remove (DANGEROUS!)
+sudo sayonara wipe /dev/sda --hpa-dco remove-perm
 ```
 
-### Forensic Investigation Cleanup
+#### Temperature-aware wiping
 ```bash
-# Secure wipe all evidence drives with verification
-sudo ./sayonara-wipe wipe-all --algorithm secure --cert-dir ./forensic_cleanup
-
-# Verify specific high-security drive
-sudo ./sayonara-wipe verify /dev/sdb
+sudo sayonara wipe /dev/sda --max-temp 60
 ```
 
-### Personal Device Disposal
+#### Check drive health
 ```bash
-# List drives to identify what needs wiping
-sudo ./sayonara-wipe list
-
-# Wipe specific drive with certificate
-sudo ./sayonara-wipe wipe /dev/sda --algorithm dod --cert-output disposal_cert.json
+sudo sayonara health /dev/sda
+sudo sayonara health all  # Check all drives
 ```
 
-## Limitations
+#### Monitor drive continuously
+```bash
+sudo sayonara health /dev/sda --monitor
+```
 
-- Requires root privileges for direct drive access
-- Hardware secure erase may not work on frozen drives
-- Some USB drives may not support secure erase commands
-- Verification is statistical and cannot guarantee 100% data destruction
-- Modern SSDs with wear leveling may retain data in spare blocks
-- **Wipe-all operations**: Cannot be undone once started
-- **Exclusion limitations**: User must manually specify system/boot drives to preserve
+#### Manage self-encrypting drives
+```bash
+# Check SED status
+sudo sayonara sed /dev/sda status
 
-## Security Considerations
+# Perform crypto erase
+sudo sayonara sed /dev/sda crypto-erase
 
-- Run in isolated environment when possible (bootable mode)
-- Verify certificates using public key infrastructure
-- Consider physical destruction for ultra-sensitive data
-- Multiple wipe passes may not be necessary for modern SSDs
-- Hardware encryption key destruction often more effective than overwriting
+# Unlock locked drive
+sudo sayonara sed /dev/sda unlock --password yourpassword
+```
 
-## Support
+### Advanced Usage
 
-This tool is designed for SIH 2025 and follows industry best practices for secure data destruction. For technical questions or issues, refer to the source code documentation and industry standards.
+#### Wipe all drives (DANGEROUS!)
+```bash
+sudo sayonara wipe-all --algorithm auto --cert-dir ./certificates --exclude /dev/sda,/dev/sdb
+```
 
-## License
+#### Force wipe unhealthy drive
+```bash
+sudo sayonara wipe /dev/sda --force --no-temp-check
+```
 
-[License information to be added]
+#### Skip safety checks (EXTREMELY DANGEROUS!)
+```bash
+sudo sayonara --unsafe-mode wipe /dev/sda
+```
 
-## Disclaimer
+#### Verify previous wipe
+```bash
+sudo sayonara verify /dev/sda --check-hidden
+```
 
-This tool permanently destroys data. Users are responsible for ensuring proper backups and confirming target drives before operation. The developers are not liable for any data loss resulting from improper use.
+## 🔐 Security Features
+
+### Multi-Layer Security
+1. **Pre-wipe**: Freeze mitigation, HPA/DCO handling
+2. **Wipe**: Multiple algorithms, hardware acceleration
+3. **Post-wipe**: TRIM operations, verification
+4. **Certificate**: Cryptographically signed proof
+
+### Verification Methods
+- Random sector sampling
+- Entropy analysis
+- Pattern detection
+- TRIM effectiveness verification
+
+## 📊 Performance Optimization
+
+- **Parallel Operations**: Multiple drives simultaneously
+- **Buffer Optimization**: 1MB buffers for efficiency
+- **Hardware Acceleration**: Uses native commands when available
+- **Smart Algorithm Selection**: Auto-selects fastest secure method
+
+## 🛡️ Safety Mechanisms
+
+### Default Protections
+- System drive exclusion
+- Mounted drive detection
+- Confirmation prompts
+- Temperature monitoring
+- Health checks
+
+### Override Options
+- `--force`: Override health checks
+- `--unsafe-mode`: Disable all safety checks
+- `--no-unfreeze`: Skip freeze mitigation
+- `--no-temp-check`: Disable temperature monitoring
+
+## 📝 Certificate Generation
+
+Each wipe generates a digitally signed certificate containing:
+- Device identification (model, serial, size)
+- Wipe algorithm used
+- Timestamp and duration
+- Verification results
+- Entropy score
+- Operator ID (if provided)
+
+## 🔍 Supported Drive Types
+
+### Hard Disk Drives (HDD)
+- ATA Secure Erase
+- Enhanced Secure Erase
+- Multi-pass overwriting
+
+### Solid State Drives (SSD)
+- ATA Secure Erase
+- TRIM operations
+- Vendor-specific commands
+
+### NVMe Drives
+- Format NVM
+- Sanitize (crypto, block, overwrite)
+- Namespace management
+
+### Self-Encrypting Drives
+- OPAL 2.0/1.0
+- TCG Enterprise
+- eDrive (BitLocker)
+- Proprietary (Samsung, Crucial, Intel)
+
+## ⚠️ Important Warnings
+
+1. **Data Loss**: All operations are IRREVERSIBLE
+2. **System Safety**: Never wipe system drives while in use
+3. **Backup**: Ensure all important data is backed up
+4. **Verification**: Always verify the correct drive before wiping
+5. **Legal**: Ensure you have authorization to wipe drives
+
+## 🐛 Troubleshooting
+
+### Drive is frozen
+```bash
+# Try automatic unfreezing
+sudo sayonara wipe /dev/sda  # Will attempt unfreezing automatically
+
+# Or manually check status
+sudo hdparm -I /dev/sda | grep frozen
+```
+
+### Permission denied
+```bash
+# Ensure running as root
+sudo sayonara list
+
+# Check if drive is in use
+lsof /dev/sda
+```
+
+### Temperature too high
+```bash
+# Wait for cooling
+sudo sayonara health /dev/sda --monitor
+
+# Or force (risky)
+sudo sayonara wipe /dev/sda --no-temp-check
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) first.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- DoD 5220.22-M standard
+- Peter Gutmann's secure deletion research
+- NIST SP 800-88 guidelines
+- Open source community
+
+## ⚡ Quick Reference
+
+| Command | Description |
+|---------|-------------|
+| `list` | Show all drives and capabilities |
+| `wipe` | Securely erase a drive |
+| `wipe-all` | Erase multiple drives |
+| `verify` | Check if wipe was successful |
+| `health` | Check drive health status |
+| `sed` | Manage self-encrypting drives |
+
+| Algorithm | Passes | Best For |
+|-----------|--------|----------|
+| `auto` | Varies | Automatic selection |
+| `dod` | 3 | General purpose |
+| `gutmann` | 35 | Maximum security |
+| `secure` | 1 | Hardware acceleration |
+| `crypto` | 1 | Self-encrypting drives |
+| `trim` | 1 | SSDs only |
+
+---
+
+**Remember**: With great power comes great responsibility. Always double-check before wiping!

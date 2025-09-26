@@ -1,4 +1,3 @@
-// src/crypto/mod.rs
 pub mod certificates;
 
 // Re-export

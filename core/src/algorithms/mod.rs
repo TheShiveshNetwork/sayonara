@@ -1,4 +1,3 @@
-// src/algorithms/mod.rs
 pub mod gutmann;
 pub mod dod;
 pub mod random;
