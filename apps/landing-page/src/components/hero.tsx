@@ -2,23 +2,92 @@
 
 import { Button } from "@/components/ui/button";
 import { Shield, Download, Disc } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
-import appScreenshot from "@/assets/app-mockup.png";
+import { SayonaraWipeFlow } from "./ui/animated-beam";
+import Highlighter from "./ui/highlighter";
 
 const Hero = () => {
     return (
-        <section className="hero-section min-h-screen flex items-center justify-center px-4 pt-20 relative overflow-hidden hero-gradient">
+        <section className="hero-section min-h-screen flex items-center justify-center px-4 pt-20 relative overflow-hidden ">
+
+            {/* Indigo Cosmos Background with Top Glow */}
+            <div
+                className="absolute inset-0 z-0"
+                style={{
+                    background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(99, 102, 241, 0.25), transparent 70%), #000000",
+                }}
+            />
+
+            <div
+                className="absolute inset-0 z-0 opacity-10"
+                style={{
+                    backgroundImage: `
+        linear-gradient(to right, #e7e5e4 1px, transparent 1px),
+        linear-gradient(to bottom, #e7e5e4 1px, transparent 1px)
+      `,
+                    backgroundSize: "20px 20px",
+                    backgroundPosition: "0 0, 0 0",
+                    maskImage: `
+         repeating-linear-gradient(
+              to right,
+              black 0px,
+              black 3px,
+              transparent 3px,
+              transparent 8px
+            ),
+            repeating-linear-gradient(
+              to bottom,
+              black 0px,
+              black 3px,
+              transparent 3px,
+              transparent 8px
+            ),
+            radial-gradient(ellipse 100% 80% at 50% 100%, #000 50%, transparent 90%)
+      `,
+                    WebkitMaskImage: `
+  repeating-linear-gradient(
+              to right,
+              black 0px,
+              black 3px,
+              transparent 3px,
+              transparent 8px
+            ),
+            repeating-linear-gradient(
+              to bottom,
+              black 0px,
+              black 3px,
+              transparent 3px,
+              transparent 8px
+            ),
+            radial-gradient(ellipse 100% 80% at 50% 100%, #000 50%, transparent 90%)
+      `,
+                    maskComposite: "intersect",
+                    WebkitMaskComposite: "source-in",
+                }}
+            />
+
+            {/* Aurora Mystic Mist Background */}
+            {/* <div
+                className="absolute inset-0 z-0"
+                style={{
+                    backgroundImage: `
+          radial-gradient(circle at 50% 100%, rgba(58, 175, 169, 0.6) 0%, transparent 60%),
+          radial-gradient(circle at 50% 100%, rgba(255, 140, 0, 0.4) 0%, transparent 70%),
+          radial-gradient(circle at 50% 100%, rgba(238, 130, 238, 0.3) 0%, transparent 80%)
+        `,
+                }}
+            /> */}
+
             {/* Plasma Beam System */}
             <div className="plasma-beam-container">
                 {/* Spotlight from top */}
-                <div className="spotlight"></div>
+                {/* <div className="spotlight"></div> */}
 
                 {/* Main plasma beam */}
-                <div className="plasma-beam"></div>
+                {/* <div className="plasma-beam"></div> */}
 
                 {/* Plasma flow particles */}
-                <div className="plasma-flow-container">
+                {/* <div className="plasma-flow-container">
                     {[...Array(6)].map((_, i) => (
                         <div
                             suppressHydrationWarning
@@ -32,7 +101,7 @@ const Hero = () => {
                             }}
                         />
                     ))}
-                </div>
+                </div> */}
             </div>
 
             <div className="container mx-auto max-w-6xl relative z-10">
@@ -45,11 +114,10 @@ const Hero = () => {
                                     Secure Data Erasure
                                 </span>
                             </div>
-                            <h1 className="text-4xl md:text-6xl font-bold leading-tight">
+                            <h1 className="text-4xl md:text-6xl font-bold -leading-[50px]">
                                 Complete Drive
-                                <span className="gradient-text-primary"> Erasure</span>
-                                <br />
-                                Made Simple
+                                <Highlighter color="#FF9800"> Erasure</Highlighter>
+                                {" "}Made Simple
                             </h1>
                             <p className="text-xl text-muted-foreground max-w-lg">
                                 Military-grade data destruction software that permanently erases sensitive information
@@ -60,13 +128,13 @@ const Hero = () => {
                         <div className="flex flex-col sm:flex-row gap-4">
                             <Button variant="outline" size="lg" className="text-lg px-8 py-6" asChild>
                                 <Link href="/download-app">
-                                    <Download className="h-5 w-5" />
+                                    <Download className="h-5 w-5 mr-2" />
                                     Download App
                                 </Link>
                             </Button>
                             <Button variant="outline" size="lg" className="text-lg px-8 py-6" asChild>
                                 <Link href="/download-iso">
-                                    <Disc className="h-5 w-5" />
+                                    <Disc className="h-5 w-5 mr-2" />
                                     Download ISO
                                 </Link>
                             </Button>
@@ -83,21 +151,7 @@ const Hero = () => {
                             </div>
                         </div>
                     </div>
-
-                    {/* Image with glow effect */}
-                    <div className="relative animate-float">
-                        <div className="card-glow rounded-2xl overflow-hidden image-container glow relative">
-                            <div className="plasma-impact-point"></div>
-                            <div className="screen-glare"></div>
-                            <Image
-                                src={appScreenshot}
-                                alt="SecureWipe Application Interface"
-                                height={500}
-                                width={500}
-                                className="w-full h-auto rounded-2xl shadow-2xl relative z-20"
-                            />
-                        </div>
-                    </div>
+                    <SayonaraWipeFlow />
                 </div>
             </div>
         </section>
