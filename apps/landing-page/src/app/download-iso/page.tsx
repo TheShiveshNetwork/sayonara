@@ -3,6 +3,8 @@ import { CheckCircle, Download, Shield } from "lucide-react";
 import ISO_IMAGE from "@/assets/usb_mockup.png";
 import Image from "next/image";
 
+export const dynamic = "force-dynamic";
+
 export default function DownloadISOPage() {
   const isoVersions = [
     {
