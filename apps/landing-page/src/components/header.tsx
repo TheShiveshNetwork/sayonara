@@ -25,11 +25,14 @@ const Header = () => {
         </Link>
 
         <nav className="hidden md:flex items-center space-x-8 absolute left-1/2 -translate-x-1/2">
-          <Link href="/about" className="text-muted-foreground hover:text-foreground transition-colors">
-            About
+          <Link href="/products" className="text-muted-foreground hover:text-foreground transition-colors">
+            Products
           </Link>
           <Link href="/download" className="text-muted-foreground hover:text-foreground transition-colors">
             Download
+          </Link>
+          <Link href="/cost-estimation" className="text-muted-foreground hover:text-foreground transition-colors">
+            Cost Estimation
           </Link>
           <Link href="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">
             Privacy
