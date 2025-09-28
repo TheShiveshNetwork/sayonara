@@ -15,14 +15,19 @@ export function DemoVideo() {
             >
                 {/* Card wrapper */}
                 <div className="relative rounded-2xl border md:rounded-3xl overflow-hidden shadow-lg">
-                    <div className="relative rounded-xl overflow-hidden aspect-video">
-                        <iframe
+                    <div className="relative rounded-xl overflow-hidden">
+                        {/* <iframe
                             className="absolute inset-0 w-full h-full rounded-xl"
                             src="https://www.youtube.com/embed/YRddOEtlnEk?si=niZf9YBQLYus9GMN"
                             title="YouTube video player"
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                             referrerPolicy="strict-origin-when-cross-origin"
                             allowFullScreen
+                        /> */}
+                        <video
+                            src={"/demo.mp4"}
+                            className="w-full h-full"
+                            autoPlay
                         />
                     </div>
                 </div>

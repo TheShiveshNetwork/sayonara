@@ -11,7 +11,7 @@ export function CTA() {
                     backgroundImage: `radial-gradient(circle 800px at 50% 100px, rgba(139,92,246,0.4), transparent)`,
                 }}
             />
-            <div className="mx-auto py-10 px-4 md:px-0 max-w-6xl">
+            <div className="mx-auto relative py-10 px-4 md:px-0 max-w-6xl z-10">
                 <div className="text-center mb-8">
                     <h2 className="text-3xl md:text-4xl font-bold mb-4">
                         Download Sayonara
