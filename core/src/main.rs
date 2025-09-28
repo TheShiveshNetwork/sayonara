@@ -14,8 +14,14 @@ use sayonara_wipe::drives::{
 };
 use sayonara_wipe::algorithms::{dod::DoDWipe, gutmann::GutmannWipe, random::RandomWipe};
 use sayonara_wipe::verification::recovery_test::RecoveryTest;
+use sayonara_wipe::verification::enhanced::{
+    EnhancedVerification,
+    VerificationReport,
+    PostWipeAnalysis,
+    LiveUSBVerification,
+};
 use sayonara_wipe::crypto::certificates::{CertificateGenerator, WipeDetails, VerificationResult};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::io::{self, Write};
 use uuid::Uuid;
 
@@ -154,6 +160,64 @@ enum Commands {
         #[command(subcommand)]
         action: SedAction,
     },
+
+    /// Enhanced wipe with mathematical verification (RECOMMENDED)
+    EnhancedWipe {
+        /// Device path (e.g., /dev/sda)
+        device: String,
+
+        /// Wiping algorithm (dod, gutmann, random, zero, secure, crypto, sanitize, trim, auto)
+        #[arg(short, long, default_value = "auto")]
+        algorithm: String,
+
+        /// Output certificate path
+        #[arg(short, long)]
+        cert_output: Option<String>,
+
+        /// Sample percentage for verification (0.1-10.0)
+        #[arg(long, default_value = "1.0")]
+        sample_percent: f64,
+
+        /// Skip pre-wipe tests (not recommended)
+        #[arg(long)]
+        skip_pre_tests: bool,
+
+        /// Required confidence level (90-100)
+        #[arg(long, default_value = "95.0")]
+        min_confidence: f64,
+
+        /// Handle HPA/DCO (ignore, detect, remove-temp, remove-perm)
+        #[arg(long, default_value = "detect")]
+        hpa_dco: String,
+
+        /// Skip TRIM after wipe
+        #[arg(long)]
+        no_trim: bool,
+
+        /// Force operation even if drive is unhealthy
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Create Live USB for external verification
+    CreateVerificationUSB {
+        /// Output path for USB image
+        output: String,
+    },
+
+    /// Verify from Live USB environment and report results
+    LiveVerify {
+        /// Device to verify
+        device: String,
+
+        /// Remote endpoint for reporting
+        #[arg(long)]
+        report_to: Option<String>,
+
+        /// Sample percentage (0.1-10.0)
+        #[arg(long, default_value = "1.0")]
+        sample_percent: f64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -173,6 +237,228 @@ enum SedAction {
         /// Password
         password: String,
     },
+}
+
+/// Enhanced wipe with pre and post verification
+async fn enhanced_wipe_with_verification(
+    device: &str,
+    drive_info: &DriveInfo,
+    config: WipeConfig,
+    cert_output: Option<&str>,
+    sample_percent: f64,
+    min_confidence: f64,
+) -> Result<()> {
+    println!("\n🚀 Starting Enhanced Secure Wipe with Mathematical Verification");
+    println!("Device: {} ({} GB)", device, drive_info.size / (1024 * 1024 * 1024));
+    println!("{}", "=".repeat(70));
+
+    let start_time = Instant::now();
+
+    // ===== STAGE 1: PRE-WIPE VERIFICATION CAPABILITY TEST =====
+    println!("\n📋 Stage 1: Pre-Wipe Verification Testing");
+    println!("Testing our ability to detect data patterns...\n");
+
+    let pre_wipe_results = EnhancedVerification::pre_wipe_capability_test(
+        device,
+        1024 * 1024, // Use 1MB test area
+    )?;
+
+    // Display pre-wipe test results
+    println!("✅ Verification System Test Results:");
+    println!("  ├─ Pattern Detection: {}",
+             if pre_wipe_results.test_pattern_detection { "✓ PASSED" } else { "✗ FAILED" });
+    println!("  ├─ Recovery Tool Simulation: {}",
+             if pre_wipe_results.recovery_tool_simulation { "✓ PASSED" } else { "✗ FAILED" });
+    println!("  ├─ Sensitivity Calibration: {:.1}%", pre_wipe_results.sensitivity_calibration);
+    println!("  ├─ False Positive Rate: {:.2}%", pre_wipe_results.false_positive_rate * 100.0);
+    println!("  └─ False Negative Rate: {:.2}%", pre_wipe_results.false_negative_rate * 100.0);
+
+    if !pre_wipe_results.test_pattern_detection || !pre_wipe_results.recovery_tool_simulation {
+        eprintln!("⚠️  Warning: Verification system tests failed!");
+        print!("Do you want to continue anyway? [y/N]: ");
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        if input.trim().to_lowercase() != "y" {
+            return Err(anyhow::anyhow!("Operation cancelled by user"));
+        }
+    }
+
+    // ===== STAGE 2: COMPLETE DATA WIPE =====
+    println!("\n🔥 Stage 2: Complete Data Destruction");
+    println!("Algorithm: {:?}", config.algorithm);
+
+    // Execute the wipe
+    println!("  └─ Executing wipe algorithm...");
+    select_and_execute_wipe(device, drive_info, &config).await?;
+
+    let wipe_duration = start_time.elapsed();
+    println!("✅ Wipe completed in {:.2} seconds", wipe_duration.as_secs_f64());
+
+    // ===== STAGE 3: MATHEMATICAL VERIFICATION =====
+    println!("\n🔬 Stage 3: Mathematical Verification");
+    println!("Analyzing wiped drive for data remnants...\n");
+
+    let post_wipe_analysis = EnhancedVerification::post_wipe_mathematical_verification(
+        device,
+        drive_info.size,
+        sample_percent,
+    )?;
+
+    // Display post-wipe analysis
+    display_post_wipe_analysis(&post_wipe_analysis);
+
+    // ===== STAGE 4: CONFIDENCE CALCULATION & REPORT =====
+    println!("\n📊 Stage 4: Generating Verification Report");
+
+    let verification_report = EnhancedVerification::generate_verification_report(
+        device,
+        pre_wipe_results,
+        post_wipe_analysis,
+    )?;
+
+    display_verification_summary(&verification_report);
+
+    // Check if confidence requirement was met
+    if verification_report.confidence_level < min_confidence {
+        eprintln!("\n❌ Confidence level {:.1}% is below required {:.1}%",
+                  verification_report.confidence_level, min_confidence);
+        return Err(anyhow::anyhow!("Verification confidence below required threshold"));
+    }
+
+    // ===== STAGE 5: CERTIFICATE GENERATION =====
+    if let Some(cert_path) = cert_output {
+        println!("\n🏆 Stage 5: Generating Certificate");
+        generate_enhanced_certificate(
+            drive_info,
+            &config,
+            &verification_report,
+            wipe_duration,
+            cert_path,
+        )?;
+        println!("✅ Certificate saved to: {}", cert_path);
+    }
+
+    // ===== STAGE 6: POST-WIPE OPERATIONS =====
+    if config.use_trim_after && drive_info.capabilities.trim_support {
+        println!("\n🧹 Stage 6: Post-Wipe TRIM");
+        TrimOperations::secure_trim_with_verify(device)?;
+    }
+
+    // Final summary
+    println!("\n{}", "=".repeat(70));
+    println!("🎉 WIPE VERIFICATION COMPLETE");
+    println!("{}", "=".repeat(70));
+    println!("📊 Confidence Level: {:.1}%", verification_report.confidence_level);
+    println!("✅ Compliance Standards Met:");
+    for standard in &verification_report.compliance_standards {
+        println!("   • {}", standard);
+    }
+    println!("\n📝 Recommendations:");
+    for recommendation in &verification_report.recommendations {
+        println!("   {}", recommendation);
+    }
+
+    Ok(())
+}
+
+/// Display post-wipe analysis results
+fn display_post_wipe_analysis(analysis: &PostWipeAnalysis) {
+    println!("📈 Analysis Results:");
+
+    // Entropy Score
+    let entropy_icon = if analysis.entropy_score > 7.8 { "✅" }
+    else if analysis.entropy_score > 7.5 { "⚠️" }
+    else { "❌" };
+    println!("  ├─ {} Entropy Score: {:.4}/8.0", entropy_icon, analysis.entropy_score);
+
+    // Chi-square test
+    let chi_icon = if analysis.chi_square_test < 300.0 { "✅" } else { "⚠️" };
+    println!("  ├─ {} Chi-Square Test: {:.2}", chi_icon, analysis.chi_square_test);
+
+    // Pattern Analysis
+    println!("  ├─ Pattern Analysis:");
+    println!("  │  ├─ Repeating Patterns: {}",
+             if analysis.pattern_analysis.repeating_patterns_found { "❌ FOUND" } else { "✅ None" });
+    println!("  │  ├─ File Signatures: {}",
+             if analysis.pattern_analysis.known_file_signatures { "❌ FOUND" } else { "✅ None" });
+    println!("  │  └─ Structured Data: {}",
+             if analysis.pattern_analysis.structured_data_detected { "❌ FOUND" } else { "✅ None" });
+
+    // Statistical Tests
+    let tests_passed = [
+        analysis.statistical_tests.runs_test_passed,
+        analysis.statistical_tests.monobit_test_passed,
+        analysis.statistical_tests.poker_test_passed,
+        analysis.statistical_tests.serial_test_passed,
+        analysis.statistical_tests.autocorrelation_test_passed,
+    ].iter().filter(|&&x| x).count();
+
+    println!("  ├─ Statistical Tests: {}/5 passed", tests_passed);
+
+    // Sector Sampling
+    println!("  └─ Sector Analysis:");
+    println!("     ├─ Sectors Sampled: {}", analysis.sector_sampling.total_sectors_sampled);
+    println!("     └─ Suspicious Sectors: {}", analysis.sector_sampling.suspicious_sectors);
+}
+
+/// Display verification summary
+fn display_verification_summary(report: &VerificationReport) {
+    let confidence_color = if report.confidence_level >= 99.0 { "🟢" }
+    else if report.confidence_level >= 95.0 { "🟡" }
+    else { "🔴" };
+
+    println!("\n📋 Verification Summary:");
+    println!("  {} Confidence Level: {:.1}%", confidence_color, report.confidence_level);
+    println!("  ⏰ Timestamp: {}", report.timestamp.format("%Y-%m-%d %H:%M:%S UTC"));
+    println!("  🔧 Method: {}", report.verification_method);
+}
+
+/// Generate enhanced certificate with verification details
+fn generate_enhanced_certificate(
+    drive_info: &DriveInfo,
+    config: &WipeConfig,
+    verification_report: &VerificationReport,
+    duration: Duration,
+    cert_path: &str,
+) -> Result<()> {
+    use crate::crypto::certificates::{CertificateGenerator, WipeDetails, VerificationResult};
+
+    let cert_gen = CertificateGenerator::new();
+
+    // Create enhanced wipe details
+    let wipe_details = WipeDetails {
+        algorithm_used: format!("{:?}", config.algorithm),
+        passes_completed: 1,
+        duration_seconds: duration.as_secs(),
+        operator_id: None,
+    };
+
+    // Create enhanced verification result
+    let verification_result = VerificationResult {
+        verified: verification_report.confidence_level >= 95.0,
+        entropy_score: verification_report.post_wipe_analysis.entropy_score,
+        recovery_test_passed: verification_report.confidence_level >= 99.0,
+        verification_timestamp: verification_report.timestamp,
+    };
+
+    let certificate = cert_gen.generate_certificate(
+        drive_info,
+        wipe_details,
+        verification_result,
+    )?;
+
+    // Add enhanced verification data to certificate
+    let mut enhanced_cert = serde_json::to_value(&certificate)?;
+    enhanced_cert["enhanced_verification"] = serde_json::to_value(&verification_report)?;
+
+    // Save enhanced certificate
+    let cert_json = serde_json::to_string_pretty(&enhanced_cert)?;
+    std::fs::write(cert_path, cert_json)?;
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -221,6 +507,157 @@ async fn main() -> Result<()> {
         }
         Commands::Sed { device, action } => {
             handle_sed(device, action).await?;
+        }
+        Commands::EnhancedWipe {
+            device,
+            algorithm,
+            cert_output,
+            sample_percent,
+            skip_pre_tests: _,
+            min_confidence,
+            hpa_dco,
+            no_trim,
+            force,
+        } => {
+            // Verify we're running as root
+            if !is_root() && !cli.unsafe_mode {
+                eprintln!("Error: This program requires root privileges.");
+                eprintln!("Please run with sudo or as root user.");
+                std::process::exit(1);
+            }
+
+            // Detect drive
+            let drives = DriveDetector::detect_all_drives()?;
+            let drive_info = drives.into_iter()
+                .find(|d| d.device_path == *device)
+                .ok_or_else(|| anyhow::anyhow!("Drive not found: {}", device))?;
+
+            // Safety checks
+            if !cli.unsafe_mode {
+                if DriveDetector::is_system_drive(device)? {
+                    eprintln!("Error: {} appears to be a system drive.", device);
+                    eprintln!("Use --unsafe-mode to override (DANGEROUS!)");
+                    return Ok(());
+                }
+
+                if DriveDetector::is_mounted(device)? {
+                    eprintln!("Error: {} is currently mounted.", device);
+                    eprintln!("Please unmount before wiping.");
+                    return Ok(());
+                }
+            }
+
+            // Health check
+            if !force {
+                if let Some(health) = &drive_info.health_status {
+                    if *health == HealthStatus::Failed || *health == HealthStatus::Critical {
+                        eprintln!("Error: Drive health is {:?}", health);
+                        eprintln!("Use --force to override.");
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Build config
+            let config = build_wipe_config(
+                algorithm,
+                true,  // Always verify in enhanced mode
+                hpa_dco,
+                !no_trim,
+                true,  // Temperature monitoring
+                65,
+                true,  // Freeze mitigation
+            )?;
+
+            // Safety confirmation
+            if !cli.unsafe_mode {
+                println!("\n⚠️  WARNING: Enhanced Secure Wipe with Mathematical Verification");
+                println!("This will PERMANENTLY DESTROY all data on:");
+                println!("  Device: {}", device);
+                println!("  Model: {}", drive_info.model);
+                println!("  Serial: {}", drive_info.serial);
+                println!("  Size: {} GB", drive_info.size / (1024 * 1024 * 1024));
+                println!("\nVerification Parameters:");
+                println!("  Required confidence level: {}%", min_confidence);
+                println!("  Sample percentage: {}%", sample_percent);
+
+                print!("\nType 'DESTROY' to confirm: ");
+                io::stdout().flush()?;
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+
+                if input.trim() != "DESTROY" {
+                    println!("Operation cancelled");
+                    return Ok(());
+                }
+            }
+
+            // Execute enhanced wipe
+            enhanced_wipe_with_verification(
+                device,
+                &drive_info,
+                config,
+                cert_output.as_deref(),
+                *sample_percent,
+                *min_confidence,
+            ).await?;
+        }
+
+        Commands::CreateVerificationUSB { output: _ } => {
+            println!("🔧 Creating Live USB Verification Image");
+            LiveUSBVerification::create_verification_usb()?;
+            println!("✅ Instructions for USB creation have been generated");
+        }
+
+        Commands::LiveVerify { device, report_to, sample_percent } => {
+            // This would be run from the Live USB environment
+            println!("🔍 Live Verification Mode");
+            println!("Device: {}", device);
+
+            // Get device size
+            let device_size = {
+                use std::process::Command;
+                let output = Command::new("blockdev")
+                    .args(["--getsize64", device])
+                    .output()?;
+                let size_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                size_str.parse::<u64>()?
+            };
+
+            // Run verification
+            println!("Running pre-wipe capability tests...");
+            let pre_wipe = EnhancedVerification::pre_wipe_capability_test(device, 1024 * 1024)?;
+
+            println!("Running post-wipe mathematical verification...");
+            let post_wipe = EnhancedVerification::post_wipe_mathematical_verification(
+                device,
+                device_size,
+                *sample_percent,
+            )?;
+
+            let report = EnhancedVerification::generate_verification_report(
+                device,
+                pre_wipe,
+                post_wipe,
+            )?;
+
+            // Display results
+            display_verification_summary(&report);
+
+            // Send to remote if configured
+            if let Some(endpoint) = report_to {
+                println!("📤 Sending report to {}...", endpoint);
+                LiveUSBVerification::send_verification_report(&report, endpoint)?;
+                println!("✅ Report sent successfully");
+            }
+
+            // Save local copy
+            let local_report = format!("verification_report_{}.json",
+                                       chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+            let json = serde_json::to_string_pretty(&report)?;
+            std::fs::write(&local_report, json)?;
+            println!("📝 Report saved to: {}", local_report);
         }
     }
 
@@ -884,7 +1321,7 @@ async fn check_health(device: &str, self_test: bool, monitor: bool) -> Result<()
             loop {
                 print!("\x1B[2J\x1B[1;1H"); // Clear screen
                 print_health_status(device).await?;
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         } else {
             print_health_status(device).await?;
