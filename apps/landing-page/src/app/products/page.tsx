@@ -63,14 +63,14 @@ export default function ProductCard() {
                                         USB 1.0
                                     </span>
                                     <span className="px-3 py-1 text-xs font-medium bg-cyan-500/20 text-cyan-200 rounded-full border border-cyan-500/30">
-                                        256GB
+                                        8GB
                                     </span>
                                 </div>
 
                                 {/* Price */}
                                 <div className="flex items-baseline space-x-2">
                                     Starting at
-                                    <span className="text-3xl font-bold text-white ml-2">₹750</span>
+                                    <span className="text-3xl font-bold text-white ml-2">₹399</span>
                                 </div>
 
                                 {/* Action Buttons */}
