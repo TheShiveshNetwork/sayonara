@@ -9,3 +9,6 @@ Thumbs.db
 
 .idea/
 target/
+
+# avoid pushing node related files in root dir
+node_modules/
