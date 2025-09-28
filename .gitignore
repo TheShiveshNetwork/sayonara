@@ -1,0 +1,42 @@
+# Logs
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+
+# Tauri build output
+src-tauri/target/
+src-tauri/target/release/
+src-tauri/target/debug/
+src-tauri/target/**
+
+# OS junk files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment files (if you use them)
+.env
+.env.local
+.env.*
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Installer artifacts
+*.deb
+*.AppImage
+*.dmg
+*.exe
+*.msi
