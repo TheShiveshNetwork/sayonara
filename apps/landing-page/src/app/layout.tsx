@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
 import "./globals.css";
+import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
 import Header from "@/components/header";
 import { Footer } from "@/components/footer";
+import ChatbotPopup from "@/components/chatbot";
 
 export const metadata: Metadata = {
   title: "Sayonara",
@@ -20,6 +21,7 @@ export default function RootLayout({
         <ThemeProvider attribute={"class"} enableSystem>
           <Header />
           {children}
+          <ChatbotPopup />
           <Footer />
         </ThemeProvider>
       </body>
