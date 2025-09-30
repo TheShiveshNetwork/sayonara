@@ -64,12 +64,36 @@ directories = "5.0"
 tempfile = "3.8"
 lazy_static = "1.5.0"
 
+# NEW: Step 3 Dependencies
+# Regex for parsing controller paths
+regex = "1.10"
+
+# CPU core count for parallel operations
+num_cpus = "1.16"
+
+# Database for checkpoint storage (SQLite)
+rusqlite = { version = "0.30", features = ["bundled"] }
+
+# Tracing for structured logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# System information
+sysinfo = "0.30"
+
+# Process management
+procfs = "0.16"
+
 [dev-dependencies]
 criterion = "0.5"
 mockall = "0.12"
 proptest = "1.4"
 test-case = "3.1"
 serial_test = "3.0"
+
+# NEW: Testing with actual hardware simulation
+mock_instant = "0.3"
+tempfile = "3.8"
 
 [profile.release]
 opt-level = 3
@@ -96,6 +120,10 @@ progress-bars = []
 color-output = []
 experimental = []
 debug-mode = []
+# NEW: Integration tests feature
+integration-tests = []
+# NEW: Kernel module building
+kernel-module = []
 
 # Platform-specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -107,3 +135,7 @@ winapi = { version = "0.3", features = ["fileapi", "handleapi", "ioapiset", "win
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.9"
 IOKit-sys = "0.1.5"
+
+# Build script for kernel module
+[build-dependencies]
+cc = "1.0"

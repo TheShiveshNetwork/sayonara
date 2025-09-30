@@ -12,3 +12,23 @@ target/
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+
+# Kernel module build artifacts
+*.ko
+*.o
+*.mod
+*.mod.c
+*.mod.o
+*.order
+*.symvers
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+
+# Kernel module specific
+ata_unfreeze.ko
+ata_unfreeze.o
+ata_unfreeze.mod
+ata_unfreeze.mod.c
+ata_unfreeze.mod.o
