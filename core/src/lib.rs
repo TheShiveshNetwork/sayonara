@@ -47,6 +47,13 @@ pub enum DriveError {
     Unsupported(String),
 }
 
+impl From<anyhow::Error> for DriveError {
+    fn from(err: anyhow::Error) -> Self {
+        // Map to the most appropriate variant based on error message
+        DriveError::HardwareCommandFailed(err.to_string())
+    }
+}
+
 pub type DriveResult<T> = Result<T, DriveError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
