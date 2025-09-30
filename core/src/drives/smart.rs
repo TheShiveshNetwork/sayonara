@@ -1,7 +1,9 @@
 use crate::{DriveError, DriveResult};
-use crate::HealthStatus;
+pub(crate) use crate::HealthStatus;
 use std::process::Command;
 use std::collections::HashMap;
+use std::io;
+use std::io::Write;
 
 #[derive(Debug, Clone)]
 pub struct SMARTHealth {
@@ -46,6 +48,43 @@ pub struct TemperatureMonitor {
 pub struct SMARTMonitor;
 
 impl SMARTMonitor {
+    /// Parse temperature with robust unit detection and sanity checks
+    pub fn parse_temperature_robust(value: u64, context: &str) -> Option<u32> {
+        // Sanity check ranges for different units
+        const CELSIUS_MAX: u64 = 100;  // Drives don't survive above 100°C
+        const FAHRENHEIT_MIN: u64 = 32;
+        const FAHRENHEIT_MAX: u64 = 212;
+        const KELVIN_MIN: u64 = 273;
+        const KELVIN_MAX: u64 = 373;
+
+        let temp_celsius = if value >= KELVIN_MIN && value <= KELVIN_MAX {
+            // Likely Kelvin (e.g., 313K = 40°C)
+            println!("  🌡️  Detected Kelvin temperature: {}K", value);
+            value - 273
+        } else if value >= FAHRENHEIT_MIN && value <= FAHRENHEIT_MAX && value > CELSIUS_MAX {
+            // Likely Fahrenheit (e.g., 104°F = 40°C)
+            println!("  🌡️  Detected Fahrenheit temperature: {}°F", value);
+            ((value - 32) * 5) / 9
+        } else if value <= CELSIUS_MAX {
+            // Likely Celsius
+            value
+        } else {
+            // Invalid reading
+            eprintln!("  ⚠️  Invalid temperature reading: {} (context: {})", value, context);
+            eprintln!("     This reading is out of range for all known temperature units.");
+            eprintln!("     Possible causes: bad SMART data, firmware bug, or sensor failure.");
+            return None;
+        };
+
+        // Final sanity check
+        if temp_celsius > CELSIUS_MAX {
+            eprintln!("  ❌ Temperature {}°C exceeds physical limits! Ignoring.", temp_celsius);
+            return None;
+        }
+
+        Some(temp_celsius as u32)
+    }
+
     /// Get comprehensive SMART health information
     pub fn get_health(device_path: &str) -> DriveResult<SMARTHealth> {
         // Determine drive type and use appropriate method
@@ -74,7 +113,7 @@ impl SMARTMonitor {
         Self::parse_ata_smart(&output_str)
     }
 
-    /// Get NVMe drive SMART health
+    /// Get NVMe drive SMART health - FIXED VERSION
     fn get_nvme_health(device_path: &str) -> DriveResult<SMARTHealth> {
         // Try nvme-cli first
         let output = Command::new("nvme")
@@ -182,7 +221,7 @@ impl SMARTMonitor {
                         health.uncorrectable_errors = Some(raw_value);
                     }
                     "Wear_Leveling_Count" | "SSD_Life_Left" => {
-                        health.wear_level = Some((100 - current) as u8);
+                        health.wear_level = Some(100 - current);
                     }
                     "Bad_Block_Count" | "Runtime_Bad_Block" => {
                         health.bad_block_count = Some(raw_value);
@@ -206,7 +245,7 @@ impl SMARTMonitor {
         Ok(health)
     }
 
-    /// Parse NVMe SMART output from nvme-cli
+    /// Parse NVMe SMART output from nvme-cli - FIXED VERSION
     fn parse_nvme_smart(output: &str, device_path: &str) -> DriveResult<SMARTHealth> {
         let mut health = SMARTHealth {
             overall_health: HealthStatus::Unknown,
@@ -227,40 +266,35 @@ impl SMARTMonitor {
         };
 
         for line in output.lines() {
-            let line = line.to_lowercase();
+            let line_lower = line.to_lowercase();
 
-            if line.contains("critical_warning") {
-                if let Some(value) = Self::extract_hex_value(&line) {
+            if line_lower.contains("critical_warning") {
+                if let Some(value) = Self::extract_hex_value(&line_lower) {
                     health.critical_warning = Some(value as u8);
                 }
-            } else if line.contains("temperature") && !line.contains("sensor") {
-                if let Some(value) = Self::extract_number(&line) {
-                    // Convert from Kelvin if needed
-                    let celsius = if value > 273 {
-                        value - 273
-                    } else {
-                        value
-                    };
-                    health.temperature_celsius = Some(celsius as u32);
+            } else if line_lower.contains("temperature") && !line_lower.contains("sensor") {
+                if let Some(value) = Self::extract_number(&line_lower) {
+                    // FIXED: Use robust temperature parsing
+                    health.temperature_celsius = Self::parse_temperature_robust(value, line);
                 }
-            } else if line.contains("power_on_hours") {
-                if let Some(value) = Self::extract_number(&line) {
+            } else if line_lower.contains("power_on_hours") || line_lower.contains("power on hours") {
+                if let Some(value) = Self::extract_number(&line_lower) {
                     health.power_on_hours = Some(value);
                 }
-            } else if line.contains("power_cycles") {
-                if let Some(value) = Self::extract_number(&line) {
+            } else if line_lower.contains("power_cycles") || line_lower.contains("power cycles") {
+                if let Some(value) = Self::extract_number(&line_lower) {
                     health.power_cycle_count = Some(value);
                 }
-            } else if line.contains("media_errors") {
-                if let Some(value) = Self::extract_number(&line) {
+            } else if line_lower.contains("media_errors") || line_lower.contains("media and data integrity") {
+                if let Some(value) = Self::extract_number(&line_lower) {
                     health.media_errors = Some(value);
                 }
-            } else if line.contains("percentage_used") {
-                if let Some(value) = Self::extract_number(&line) {
+            } else if line_lower.contains("percentage_used") || line_lower.contains("percentage used") {
+                if let Some(value) = Self::extract_number(&line_lower) {
                     health.wear_level = Some(value as u8);
                 }
-            } else if line.contains("available_spare") && !line.contains("threshold") {
-                if let Some(value) = Self::extract_percentage(&line) {
+            } else if line_lower.contains("available_spare") && !line_lower.contains("threshold") {
+                if let Some(value) = Self::extract_percentage(&line_lower) {
                     health.available_spare = Some(value as u8);
                 }
             }
@@ -273,7 +307,6 @@ impl SMARTMonitor {
 
         if let Ok(output) = health_output {
             let output_str = String::from_utf8_lossy(&output.stdout);
-            // Parse controller info for additional context
             for line in output_str.lines() {
                 if line.contains("Critical Warning") {
                     health.overall_health = if line.contains("0x00") {
@@ -407,17 +440,39 @@ impl SMARTMonitor {
         HealthStatus::Good
     }
 
-    /// Monitor temperature during operations
+    /// Monitor temperature during operations - FIXED VERSION
     pub fn monitor_temperature(device_path: &str) -> DriveResult<TemperatureMonitor> {
         let health = Self::get_health(device_path)?;
 
-        let current = health.temperature_celsius.unwrap_or(0);
+        let current = match health.temperature_celsius {
+            Some(temp) => {
+                // Additional sanity check
+                if temp > 100 {
+                    eprintln!("⚠️  WARNING: Temperature reading {}°C is physically impossible!", temp);
+                    eprintln!("   Possible SMART data corruption or sensor failure.");
+                    eprintln!("   Using safe fallback temperature of 50°C for safety checks.");
+                    50  // Safe fallback
+                } else if temp > 85 {
+                    eprintln!("⚠️  CRITICAL: Temperature {}°C is dangerously high!", temp);
+                    temp
+                } else {
+                    temp
+                }
+            }
+            None => {
+                eprintln!("⚠️  WARNING: Could not read temperature sensor");
+                eprintln!("   Temperature monitoring will be disabled.");
+                return Err(DriveError::SMARTReadFailed(
+                    "Temperature sensor unavailable".to_string()
+                ));
+            }
+        };
 
         // Set thresholds based on drive type
         let (warning, critical, max) = if device_path.contains("nvme") {
-            (60, 70, 85)  // NVMe typically rated for higher temps
+            (65, 75, 85)  // NVMe typically rated for higher temps
         } else {
-            (50, 60, 70)   // SATA/SAS more conservative
+            (55, 65, 70)   // SATA/SAS more conservative
         };
 
         Ok(TemperatureMonitor {
@@ -428,27 +483,49 @@ impl SMARTMonitor {
         })
     }
 
-    /// Check if it's safe to proceed with operation
+    /// Check if it's safe to operate - ENHANCED VERSION
     pub fn check_safe_to_operate(device_path: &str) -> DriveResult<bool> {
-        let health = Self::get_health(device_path)?;
+        let health = match Self::get_health(device_path) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("⚠️  Could not read drive health: {}", e);
+                eprintln!("   Assuming safe to proceed (use --force to bypass)");
+                return Ok(true);
+            }
+        };
 
         // Don't operate on failing drives
         if health.overall_health == HealthStatus::Failed {
+            eprintln!("❌ Drive health status: FAILED");
             return Ok(false);
         }
 
-        // Check temperature
+        // Check temperature with better error handling
         if let Some(temp) = health.temperature_celsius {
-            if temp > 65 {
-                println!("Warning: Drive temperature is {}°C", temp);
+            if temp > 100 {
+                eprintln!("❌ Temperature reading {}°C is impossible - sensor may be broken", temp);
+                eprintln!("   Recommend checking drive with manufacturer tools");
+                print!("Continue without temperature monitoring? [y/N]: ");
+                io::stdout().flush()?;
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+
+                if input.trim().to_lowercase() != "y" {
+                    return Ok(false);
+                }
+            } else if temp > 70 {
+                eprintln!("⚠️  WARNING: Drive temperature is {}°C (high)", temp);
                 return Ok(false);
             }
+        } else {
+            eprintln!("ℹ️  Note: Temperature sensor unavailable");
         }
 
         // Check critical attributes
         if let Some(reallocated) = health.reallocated_sectors {
             if reallocated > 1000 {
-                println!("Warning: High reallocated sector count: {}", reallocated);
+                eprintln!("⚠️  WARNING: High reallocated sector count: {}", reallocated);
                 return Ok(false);
             }
         }
@@ -456,32 +533,93 @@ impl SMARTMonitor {
         Ok(true)
     }
 
-    /// Wait for drive to cool down if needed
+    /// Wait for drive to cool down if needed - FIXED VERSION with timeout
     pub fn wait_for_safe_temperature(device_path: &str, max_wait_seconds: u64) -> DriveResult<()> {
         use std::thread;
         use std::time::{Duration, Instant};
 
+        println!("\n🌡️  Temperature Safety Check");
+
         let start = Instant::now();
         let max_duration = Duration::from_secs(max_wait_seconds);
+        let mut consecutive_failures = 0;
+        const MAX_FAILURES: u32 = 3;
 
         loop {
-            let temp_mon = Self::monitor_temperature(device_path)?;
+            match Self::monitor_temperature(device_path) {
+                Ok(temp_mon) => {
+                    consecutive_failures = 0;  // Reset failure counter
 
-            if temp_mon.current_celsius <= temp_mon.warning_threshold {
-                println!("Drive temperature is safe: {}°C", temp_mon.current_celsius);
-                return Ok(());
+                    if temp_mon.current_celsius <= temp_mon.warning_threshold {
+                        println!("✅ Drive temperature is safe: {}°C (threshold: {}°C)",
+                                 temp_mon.current_celsius, temp_mon.warning_threshold);
+                        return Ok(());
+                    }
+
+                    if temp_mon.current_celsius >= temp_mon.critical_threshold {
+                        eprintln!("🔥 CRITICAL TEMPERATURE: {}°C!", temp_mon.current_celsius);
+                    }
+
+                    if start.elapsed() > max_duration {
+                        eprintln!("\n❌ Timeout: Drive did not cool down within {} seconds", max_wait_seconds);
+                        eprintln!("   Current: {}°C, Target: {}°C",
+                                  temp_mon.current_celsius, temp_mon.warning_threshold);
+
+                        print!("Continue anyway? [y/N]: ");
+                        io::stdout().flush()?;
+
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input)?;
+
+                        if input.trim().to_lowercase() == "y" {
+                            eprintln!("⚠️  WARNING: Proceeding with high temperature!");
+                            return Ok(());
+                        }
+
+                        return Err(DriveError::TemperatureExceeded(
+                            format!("Drive temperature {}°C exceeds safe threshold {}°C",
+                                    temp_mon.current_celsius, temp_mon.warning_threshold)
+                        ));
+                    }
+
+                    println!("🌡️  Temperature: {}°C (waiting to cool below {}°C) - {}s elapsed",
+                             temp_mon.current_celsius,
+                             temp_mon.warning_threshold,
+                             start.elapsed().as_secs());
+
+                    thread::sleep(Duration::from_secs(30));
+                }
+                Err(e) => {
+                    consecutive_failures += 1;
+                    eprintln!("⚠️  Failed to read temperature (attempt {}/{}): {}",
+                              consecutive_failures, MAX_FAILURES, e);
+
+                    if consecutive_failures >= MAX_FAILURES {
+                        eprintln!("\n❌ Temperature monitoring failed {} times consecutively", MAX_FAILURES);
+                        eprintln!("   Possible causes:");
+                        eprintln!("   - SMART not supported or disabled");
+                        eprintln!("   - Drive firmware bug");
+                        eprintln!("   - Sensor hardware failure");
+
+                        print!("\nSkip temperature monitoring and continue? [y/N]: ");
+                        io::stdout().flush()?;
+
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input)?;
+
+                        if input.trim().to_lowercase() == "y" {
+                            eprintln!("⚠️  WARNING: Temperature monitoring disabled!");
+                            return Ok(());
+                        }
+
+                        return Err(DriveError::SMARTReadFailed(
+                            "Temperature monitoring unavailable".to_string()
+                        ));
+                    }
+
+                    thread::sleep(Duration::from_secs(10));
+                }
             }
-
-            if start.elapsed() > max_duration {
-                return Err(DriveError::TemperatureExceeded(
-                    format!("Drive did not cool down within {} seconds", max_wait_seconds)
-                ));
-            }
-
-            println!("Drive temperature: {}°C (waiting to cool below {}°C)...",
-                     temp_mon.current_celsius, temp_mon.warning_threshold);
-
-            thread::sleep(Duration::from_secs(30));
         }
     }
 

@@ -492,12 +492,12 @@ async fn main() -> Result<()> {
             wipe_drive(device, config, cert_output.as_deref(), *force, cli.unsafe_mode).await?;
         }
         Commands::WipeAll { algorithm, no_verify, cert_dir, exclude,
-            hpa_dco, no_trim, force: _ } => {
+            hpa_dco, no_trim, force} => {
             let config = build_wipe_config(
                 algorithm, !no_verify, hpa_dco, !no_trim,
                 true, 65, true
             )?;
-            wipe_all_drives(config, cert_dir, exclude.as_deref(), cli.unsafe_mode).await?;
+            wipe_all_drives(config, cert_dir, exclude.as_deref(), cli.unsafe_mode, *force).await?;
         }
         Commands::Verify { device, check_hidden } => {
             verify_drive(device, *check_hidden).await?;
@@ -888,7 +888,7 @@ async fn wipe_drive(
     };
 
     // Perform the wipe
-    wipe_single_drive(device, &drive_info, config, cert_output, session).await
+    wipe_single_drive(device, &drive_info, config, cert_output, session, force).await
 }
 
 async fn wipe_single_drive(
@@ -897,6 +897,7 @@ async fn wipe_single_drive(
     config: WipeConfig,
     cert_output: Option<&str>,
     mut session: WipeSession,
+    force: bool,
 ) -> Result<()> {
     println!("\nStarting wipe of {} ({}, {})",
              device, drive_info.model, drive_info.serial);
@@ -953,14 +954,41 @@ async fn wipe_single_drive(
         _ => {}
     }
 
-    // Temperature monitoring
+    // Temperature monitoring - ENHANCED VERSION
     if config.temperature_monitoring {
-        if let Ok(temp_mon) = SMARTMonitor::monitor_temperature(device) {
-            if temp_mon.current_celsius > temp_mon.warning_threshold {
-                println!("Waiting for drive to cool down...");
-                SMARTMonitor::wait_for_safe_temperature(device, 300)?;
+        println!("\n🌡️  Pre-flight Temperature Check");
+
+        match SMARTMonitor::monitor_temperature(device) {
+            Ok(temp_mon) => {
+                println!("   Current: {}°C", temp_mon.current_celsius);
+                println!("   Warning threshold: {}°C", temp_mon.warning_threshold);
+                println!("   Critical threshold: {}°C", temp_mon.critical_threshold);
+
+                if temp_mon.current_celsius > temp_mon.warning_threshold {
+                    println!("\n⚠️  Drive temperature above safe operating threshold");
+
+                    match SMARTMonitor::wait_for_safe_temperature(device, 300) {
+                        Ok(_) => println!("✅ Temperature normalized"),
+                        Err(e) => {
+                            eprintln!("❌ Temperature safety check failed: {}", e);
+                            if !force {
+                                return Err(e.into());
+                            }
+                            eprintln!("⚠️  Proceeding anyway due to --force flag");
+                        }
+                    }
+                } else {
+                    println!("✅ Temperature within safe range");
+                }
+            }
+            Err(e) => {
+                eprintln!("⚠️  Temperature monitoring unavailable: {}", e);
+                eprintln!("   Continuing without temperature safety checks");
+                warnings.push(format!("Temperature monitoring disabled: {}", e));
             }
         }
+    } else {
+        println!("ℹ️  Temperature monitoring disabled by user");
     }
 
     // Phase 2: Wipe
@@ -1135,6 +1163,7 @@ async fn wipe_all_drives(
     cert_dir: &str,
     exclude: Option<&str>,
     unsafe_mode: bool,
+    force: bool,
 ) -> Result<()> {
     let drives = DriveDetector::detect_all_drives()?;
 
@@ -1224,7 +1253,8 @@ async fn wipe_all_drives(
             drive,
             config.clone(),
             Some(&cert_path),
-            session.clone()
+            session.clone(),
+            force
         ).await;
 
         match result {
@@ -1552,6 +1582,7 @@ async fn wipe_drives_parallel(
     config: WipeConfig,
     cert_dir: &str,
     max_parallel: usize,
+    force: bool,
 ) -> Result<Vec<DriveWipeRecord>> {
     use futures::stream::{self, StreamExt};
 
@@ -1577,7 +1608,8 @@ async fn wipe_drives_parallel(
                     &drive,
                     config,
                     Some(&cert_path),
-                    session
+                    session,
+                    force
                 ).await {
                     Ok(_) => DriveWipeRecord {
                         drive_info: drive.clone(),
