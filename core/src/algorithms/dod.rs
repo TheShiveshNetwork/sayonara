@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rand::RngCore;
+use crate::crypto::secure_rng::secure_random_bytes;
 use std::fs::OpenOptions;
 use std::io::{Write, Seek, SeekFrom};
 use crate::ui::progress::ProgressBar;
@@ -52,13 +52,12 @@ impl DoDWipe {
 
         const BUFFER_SIZE: usize = 1024 * 1024;
         let mut buffer = vec![0u8; BUFFER_SIZE];
-        let mut rng = rand::thread_rng();
+        secure_random_bytes(&mut buffer)?;
         let mut bytes_written = 0u64;
         let mut bar = ProgressBar::new(48);
 
         while bytes_written < size {
             let write_size = std::cmp::min(BUFFER_SIZE as u64, size - bytes_written);
-            rng.fill_bytes(&mut buffer[..write_size as usize]);
             file.write_all(&buffer[..write_size as usize])?;
             bytes_written += write_size;
 

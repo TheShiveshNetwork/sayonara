@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rand::RngCore;
+use crate::crypto::secure_rng::secure_random_bytes;
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom};
 use crate::ui::progress::ProgressBar;
@@ -43,12 +43,13 @@ impl RecoveryTest {
         let sector_size = 512u64;
         let total_sectors = size / sector_size;
         let mut test_sectors = Vec::new();
-        let mut rng = rand::thread_rng();
+        let mut bytes = [0u8; 8];
+        secure_random_bytes(&mut bytes)?;
 
         // Test 1000 random sectors (or less if not available)
         let tests = std::cmp::min(1000, total_sectors as usize);
         for _ in 0..tests {
-            let sector = rng.next_u64() % total_sectors;
+            let sector = u64::from_le_bytes(bytes) % total_sectors;
             test_sectors.push(sector * sector_size);
         }
 

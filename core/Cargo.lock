@@ -1715,6 +1715,7 @@ dependencies = [
  "env_logger",
  "futures",
  "indicatif",
+ "lazy_static",
  "libc",
  "log",
  "mockall",
