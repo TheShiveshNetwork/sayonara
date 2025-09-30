@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use rand::RngCore;
+use crate::crypto::secure_rng::secure_random_bytes;
 use std::fs::{OpenOptions, File};
 use std::io::{Write, Read, Seek, SeekFrom};
 use std::collections::HashMap;
@@ -228,7 +228,6 @@ impl GutmannWipe {
         const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB buffer
         let mut buffer = vec![0u8; BUFFER_SIZE];
         let _verification_buffer = vec![0u8; BUFFER_SIZE];
-        let mut rng = rand::thread_rng();
 
         // Seek to beginning
         file.seek(SeekFrom::Start(0))?;
@@ -242,7 +241,7 @@ impl GutmannWipe {
         // Write phase
         while bytes_written < size {
             let write_size = std::cmp::min(BUFFER_SIZE as u64, size - bytes_written);
-            rng.fill_bytes(&mut buffer[..write_size as usize]);
+            secure_random_bytes(&mut buffer[..write_size as usize])?;
 
             // Store sample for verification (first 4KB of every 100MB)
             if bytes_written % (100 * 1024 * 1024) == 0 {
@@ -347,10 +346,11 @@ impl GutmannWipe {
         }
 
         // Additionally check overall entropy at random positions
-        let mut rng = rand::thread_rng();
         for _ in 0..100 {
-            use rand::Rng;
-            let offset = rng.gen_range(0..size.saturating_sub(4096));
+            // Generate random offset using secure RNG
+            let mut offset_bytes = [0u8; 8];
+            secure_random_bytes(&mut offset_bytes)?;
+            let offset = u64::from_le_bytes(offset_bytes) % size.saturating_sub(4096);
             file.seek(SeekFrom::Start(offset))?;
 
             let mut buffer = vec![0u8; 4096];

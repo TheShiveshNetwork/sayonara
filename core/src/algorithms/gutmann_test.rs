@@ -103,10 +103,9 @@ mod tests {
         assert!(entropy > 7.9, "Perfect distribution should have max entropy");
 
         // Test real random data
-        use rand::RngCore;
-        let mut rng = rand::thread_rng();
+        use crate::crypto::secure_rng::secure_random_bytes;
         let mut real_random = vec![0u8; 4096];
-        rng.fill_bytes(&mut real_random);
+        secure_random_bytes(&mut real_random).unwrap();
         let entropy = GutmannWipe::calculate_entropy(&real_random);
         assert!(entropy > 7.5, "Random data should have high entropy");
     }
@@ -267,7 +266,7 @@ mod tests {
 
         // Should complete 4MB pattern fill in under 10ms
         assert!(duration.as_millis() < 50,
-                "Pattern generation took {}ms, should be <10ms",
+                "Pattern generation took {}ms, should be <50ms",
                 duration.as_millis());
     }
 
