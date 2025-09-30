@@ -110,6 +110,7 @@ mod tests {
         let mut drbg = HmacDrbg::new(seed);
 
         // Set counter to MAX_REQUESTS - 2
+
         drbg.reseed_counter = HmacDrbg::MAX_REQUESTS - 2;
 
         let mut out = vec![0u8; 32];
@@ -120,7 +121,6 @@ mod tests {
         // This should also work (counter becomes MAX_REQUESTS)
         assert!(drbg.generate(&mut out).is_ok());
 
-        // THIS should fail (counter is already at MAX_REQUESTS)
         assert!(drbg.generate(&mut out).is_err(), "Should fail when reseed counter hits limit");
 
         // After reseed, should work again
@@ -494,7 +494,9 @@ mod statistical_tests {
             let ratio = correlation / expected;
 
             println!("Autocorrelation at lag {}: {:.3}", lag, ratio);
+
             assert!(ratio > 0.98 && ratio < 1.02,
+
                     "Autocorrelation should be near 1.0 for lag {}", lag);
         }
 
