@@ -163,6 +163,11 @@ pub enum DriveType {
     NVMe,
     USB,
     RAID,
+    SMR,              // Shingled Magnetic Recording (Host-Managed/Aware)
+    Optane,           // Intel Optane / 3D XPoint
+    HybridSSHD,       // Hybrid HDD + SSD cache
+    EMMC,             // Embedded MultiMediaCard
+    UFS,              // Universal Flash Storage
     Unknown,
 }
 

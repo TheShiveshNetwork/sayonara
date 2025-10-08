@@ -8,6 +8,14 @@ pub mod sed;
 pub mod trim;
 pub mod smart;
 
+// NEW: Step 6 - Advanced drive support
+pub mod smr;             // Shingled Magnetic Recording
+pub mod optane;          // Intel Optane / 3D XPoint
+pub mod hybrid;          // Hybrid SSHD drives
+pub mod raid;            // RAID array handling
+pub mod emmc;            // eMMC/UFS embedded storage
+pub mod nvme_advanced;   // Advanced NVMe: ZNS, multiple namespaces, KV, computational
+
 // Re-exports
 pub use detection::DriveDetector;
 pub use hdd::HDDWipe;
