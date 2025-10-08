@@ -14,6 +14,38 @@ pub trait PlatformIO: Send + Sync {
     /// Write data with platform-specific optimizations
     fn write_optimized(&self, file: &File, data: &[u8], offset: u64) -> IOResult<usize>;
 
+    /// Read data with platform-specific optimizations
+    fn read_optimized(&self, file: &File, buffer: &mut [u8], offset: u64) -> IOResult<usize>;
+
+    /// Scatter-gather write (writev)
+    fn writev_optimized(&self, file: &File, buffers: &[&[u8]], offset: u64) -> IOResult<usize> {
+        // Default implementation: sequential writes
+        let mut total = 0;
+        let mut current_offset = offset;
+        for buffer in buffers {
+            let written = self.write_optimized(file, buffer, current_offset)?;
+            total += written;
+            current_offset += written as u64;
+        }
+        Ok(total)
+    }
+
+    /// Scatter-gather read (readv)
+    fn readv_optimized(&self, file: &File, buffers: &mut [&mut [u8]], offset: u64) -> IOResult<usize> {
+        // Default implementation: sequential reads
+        let mut total = 0;
+        let mut current_offset = offset;
+        for buffer in buffers {
+            let read = self.read_optimized(file, buffer, current_offset)?;
+            total += read;
+            current_offset += read as u64;
+            if read < buffer.len() {
+                break;  // EOF or partial read
+            }
+        }
+        Ok(total)
+    }
+
     /// Sync data to disk
     fn sync_data(&self, file: &File) -> IOResult<()>;
 
@@ -70,6 +102,67 @@ impl PlatformIO for LinuxIO {
         file.write_at(data, offset).map_err(IOError::from)
     }
 
+    fn read_optimized(&self, file: &File, buffer: &mut [u8], offset: u64) -> IOResult<usize> {
+        use std::os::unix::fs::FileExt;
+
+        // Use pread for positioned reads without seeking
+        file.read_at(buffer, offset).map_err(IOError::from)
+    }
+
+    fn writev_optimized(&self, file: &File, buffers: &[&[u8]], offset: u64) -> IOResult<usize> {
+        use std::os::unix::io::AsRawFd;
+
+        // Build iovec array
+        let iovecs: Vec<libc::iovec> = buffers.iter().map(|buf| {
+            libc::iovec {
+                iov_base: buf.as_ptr() as *mut libc::c_void,
+                iov_len: buf.len(),
+            }
+        }).collect();
+
+        unsafe {
+            let result = libc::pwritev(
+                file.as_raw_fd(),
+                iovecs.as_ptr(),
+                iovecs.len() as i32,
+                offset as i64,
+            );
+
+            if result < 0 {
+                return Err(IOError::from(std::io::Error::last_os_error()));
+            }
+
+            Ok(result as usize)
+        }
+    }
+
+    fn readv_optimized(&self, file: &File, buffers: &mut [&mut [u8]], offset: u64) -> IOResult<usize> {
+        use std::os::unix::io::AsRawFd;
+
+        // Build iovec array
+        let iovecs: Vec<libc::iovec> = buffers.iter_mut().map(|buf| {
+            libc::iovec {
+                iov_base: buf.as_mut_ptr() as *mut libc::c_void,
+                iov_len: buf.len(),
+            }
+        }).collect();
+
+        unsafe {
+            let result = libc::preadv(
+                file.as_raw_fd(),
+                iovecs.as_ptr(),
+                iovecs.len() as i32,
+                offset as i64,
+            );
+
+            if result < 0 {
+                return Err(IOError::from(std::io::Error::last_os_error()));
+            }
+
+            Ok(result as usize)
+        }
+    }
+
     fn sync_data(&self, file: &File) -> IOResult<()> {
         file.sync_data().map_err(IOError::from)
     }
@@ -121,6 +214,13 @@ impl PlatformIO for WindowsIO {
         file.write(data).map_err(IOError::from)
     }
 
+    fn read_optimized(&self, file: &File, buffer: &mut [u8], _offset: u64) -> IOResult<usize> {
+        use std::io::Read;
+
+        // Windows IOCP will be used automatically by the OS
+        file.read(buffer).map_err(IOError::from)
+    }
+
     fn sync_data(&self, file: &File) -> IOResult<()> {
         file.sync_data().map_err(IOError::from)
     }
@@ -169,6 +269,12 @@ impl PlatformIO for MacOSIO {
         use std::os::unix::fs::FileExt;
 
         file.write_at(data, offset).map_err(IOError::from)
+    }
+
+    fn read_optimized(&self, file: &File, buffer: &mut [u8], offset: u64) -> IOResult<usize> {
+        use std::os::unix::fs::FileExt;
+
+        file.read_at(buffer, offset).map_err(IOError::from)
     }
 
     fn sync_data(&self, file: &File) -> IOResult<()> {
@@ -222,6 +328,12 @@ impl PlatformIO for FreeBSDIO {
         use std::os::unix::fs::FileExt;
 
         file.write_at(data, offset).map_err(IOError::from)
+    }
+
+    fn read_optimized(&self, file: &File, buffer: &mut [u8], offset: u64) -> IOResult<usize> {
+        use std::os::unix::fs::FileExt;
+
+        file.read_at(buffer, offset).map_err(IOError::from)
     }
 
     fn sync_data(&self, file: &File) -> IOResult<()> {
