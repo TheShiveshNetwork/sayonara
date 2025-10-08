@@ -2,7 +2,6 @@
 
 use super::{IOResult, IOError};
 use std::fs::File;
-use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 
 #[cfg(target_os = "linux")]

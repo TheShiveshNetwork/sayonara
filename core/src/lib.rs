@@ -3,6 +3,7 @@ pub mod algorithms;
 pub mod verification;
 pub mod crypto;
 pub mod ui;
+pub mod io;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

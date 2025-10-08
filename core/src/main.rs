@@ -461,7 +461,7 @@ async fn main() -> Result<()> {
             println!("✅ Instructions for USB creation have been generated");
         }
 
-        Commands::LiveVerify { device, report_to, sample_percent } => {
+        Commands::LiveVerify { device, report_to, sample_percent: _ } => {
             // This would be run from the Live USB environment
             println!("🔍 Live Verification Mode");
             println!("Device: {}", device);
@@ -526,7 +526,7 @@ async fn enhanced_wipe_with_verification(
     drive_info: &DriveInfo,
     config: WipeConfig,
     cert_output: Option<&str>,
-    sample_percent: f64,         // PARAMETER 5
+    _sample_percent: f64,         // PARAMETER 5
     min_confidence: f64,          // PARAMETER 6
     verification_level: VerificationLevel,  // PARAMETER 7
     skip_pre_tests: bool,         // PARAMETER 8
@@ -1482,17 +1482,17 @@ async fn select_and_execute_wipe(
 
     match algorithm {
         Algorithm::DoD5220 => {
-            DoDWipe::wipe_drive(device, drive_info.size)?;
+            DoDWipe::wipe_drive(device, drive_info.size, drive_info.drive_type.clone())?;
         }
         Algorithm::Gutmann => {
-            GutmannWipe::wipe_drive(device, drive_info.size)?;
+            GutmannWipe::wipe_drive(device, drive_info.size, drive_info.drive_type.clone())?;
         }
         Algorithm::Random => {
-            RandomWipe::wipe_drive(device, drive_info.size)?;
+            RandomWipe::wipe_drive(device, drive_info.size, drive_info.drive_type.clone())?;
         }
         Algorithm::Zero => {
             // Simple zero overwrite
-            DoDWipe::wipe_drive(device, drive_info.size)?; // Reuse with zero pattern
+            DoDWipe::wipe_drive(device, drive_info.size, drive_info.drive_type.clone())?; // Reuse with zero pattern
         }
         Algorithm::SecureErase => {
             match drive_info.drive_type {
@@ -1501,7 +1501,7 @@ async fn select_and_execute_wipe(
                 DriveType::HDD => HDDWipe::secure_erase(device)?,
                 _ => {
                     println!("Hardware secure erase not available, falling back to DoD");
-                    DoDWipe::wipe_drive(device, drive_info.size)?;
+                    DoDWipe::wipe_drive(device, drive_info.size, drive_info.drive_type.clone())?;
                 }
             }
         }

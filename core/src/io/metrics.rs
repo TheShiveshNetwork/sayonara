@@ -118,6 +118,12 @@ impl IOMetrics {
     pub fn is_degraded(&self, baseline_throughput: u64) -> bool {
         let current = self.throughput();
 
+        // If no operations yet, can't determine degradation
+        let ops = *self.operations_count.lock().unwrap();
+        if ops == 0 {
+            return false;
+        }
+
         // Consider degraded if throughput drops below 50% of baseline
         if baseline_throughput > 0 {
             current < baseline_throughput / 2
@@ -356,7 +362,16 @@ mod tests {
 
         assert!(!metrics.is_degraded(1000));
 
+        // Sleep a bit to ensure elapsed time passes
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Record slow operation: 100 bytes in 1 second = very slow
         metrics.record_operation(100, Duration::from_secs(1));
+
+        // Sleep again to ensure throughput calculation has meaningful elapsed time
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Throughput should now be low enough to be considered degraded
         assert!(metrics.is_degraded(1000));
     }
 }

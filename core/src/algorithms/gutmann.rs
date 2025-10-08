@@ -1,10 +1,11 @@
 use anyhow::{Result, anyhow};
 use crate::crypto::secure_rng::secure_random_bytes;
-use std::fs::{OpenOptions, File};
-use std::io::{Write, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 use std::collections::HashMap;
 use std::time::Instant;
 use crate::ui::progress::ProgressBar;
+use crate::io::{OptimizedIO, IOConfig, IOHandle};
+use crate::DriveType;
 use serde::{Serialize, Deserialize};
 
 /// Drive encoding types that affect pattern selection
@@ -77,7 +78,7 @@ impl GutmannWipe {
     ];
 
     /// Perform the complete 35-pass Gutmann wipe with verification
-    pub fn wipe_drive(device_path: &str, size: u64) -> Result<()> {
+    pub fn wipe_drive(device_path: &str, size: u64, drive_type: DriveType) -> Result<()> {
         println!("Starting Gutmann 35-pass secure wipe on {}", device_path);
         println!("Drive size: {} bytes ({} GB)", size, size / (1024 * 1024 * 1024));
 
@@ -94,11 +95,16 @@ impl GutmannWipe {
                      cp.current_pass + 1, cp.timestamp);
         }
 
-        // Open file for writing
-        let mut file = OpenOptions::new()
-            .write(true)
-            .read(true)  // Need read for verification
-            .open(device_path)?;
+        // Configure I/O based on drive type
+        let io_config = match drive_type {
+            DriveType::NVMe => IOConfig::nvme_optimized(),
+            DriveType::SSD => IOConfig::sata_ssd_optimized(),
+            DriveType::HDD => IOConfig::hdd_optimized(),
+            _ => IOConfig::default(),
+        };
+
+        // Open device with optimized I/O
+        let mut io_handle = OptimizedIO::open(device_path, io_config)?;
 
         // Perform each pass
         for (pass_num, (pattern, description)) in Self::GUTMANN_PATTERNS.iter().enumerate() {
@@ -113,9 +119,9 @@ impl GutmannWipe {
 
             // Write the pattern
             if let Some(pattern_bytes) = pattern {
-                Self::write_pattern_with_verification(&mut file, size, pattern_bytes, pass_num)?;
+                Self::write_pattern_with_verification(&mut io_handle, size, pattern_bytes, pass_num)?;
             } else {
-                Self::write_random_with_verification(&mut file, size, pass_num)?;
+                Self::write_random_with_verification(&mut io_handle, size, pass_num)?;
             }
 
             let pass_duration = pass_start.elapsed();
@@ -127,7 +133,10 @@ impl GutmannWipe {
         }
 
         // Final sync
-        file.sync_all()?;
+        io_handle.sync()?;
+
+        // Print performance report
+        OptimizedIO::print_performance_report(&io_handle, None);
 
         // Clean up checkpoint
         Self::delete_checkpoint(device_path);
@@ -176,44 +185,36 @@ impl GutmannWipe {
 
     /// Write a specific pattern and verify it was written correctly
     pub(crate) fn write_pattern_with_verification(
-        file: &mut File,
+        io_handle: &mut IOHandle,
         size: u64,
         pattern: &[u8],
         pass_num: usize
     ) -> Result<()> {
-        const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB buffer
-        let mut buffer = vec![0u8; BUFFER_SIZE];
-
-        // Fill buffer with repeating pattern
-        for (i, byte) in buffer.iter_mut().enumerate() {
-            *byte = pattern[i % pattern.len()];
-        }
-
-        // Seek to beginning
-        file.seek(SeekFrom::Start(0))?;
-
         let mut bytes_written = 0u64;
         let mut bar = ProgressBar::new(48);
 
-        // Write phase
-        while bytes_written < size {
-            let write_size = std::cmp::min(BUFFER_SIZE as u64, size - bytes_written);
-            file.write_all(&buffer[..write_size as usize])?;
-            bytes_written += write_size;
+        // Write phase using OptimizedIO
+        OptimizedIO::sequential_write(io_handle, size, |buffer| {
+            // Fill buffer with repeating pattern
+            let buf = buffer.as_mut_slice();
+            for (i, byte) in buf.iter_mut().enumerate() {
+                *byte = pattern[i % pattern.len()];
+            }
+
+            bytes_written += buf.len() as u64;
 
             // Update progress every 100MB
-            if bytes_written % (100 * 1024 * 1024) == 0 || bytes_written == size {
+            if bytes_written % (100 * 1024 * 1024) == 0 || bytes_written >= size {
                 let progress = (bytes_written as f64 / size as f64) * 50.0; // First 50% for writing
                 bar.render(progress, Some(bytes_written), Some(size));
             }
-        }
 
-        // Sync to ensure data is written
-        file.sync_data()?;
+            Ok(())
+        })?;
 
         // Verification phase
         println!("\n  🔍 Verifying pass {} pattern...", pass_num + 1);
-        Self::verify_pattern(file, size, pattern, &mut bar)?;
+        Self::verify_pattern_from_device(&io_handle.device_path, size, pattern, &mut bar)?;
 
         bar.render(100.0, Some(size), Some(size));
         Ok(())
@@ -221,67 +222,66 @@ impl GutmannWipe {
 
     /// Write cryptographically secure random data and verify
     fn write_random_with_verification(
-        file: &mut File,
+        io_handle: &mut IOHandle,
         size: u64,
         pass_num: usize
     ) -> Result<()> {
-        const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB buffer
-        let mut buffer = vec![0u8; BUFFER_SIZE];
-        let _verification_buffer = vec![0u8; BUFFER_SIZE];
-
-        // Seek to beginning
-        file.seek(SeekFrom::Start(0))?;
-
         let mut bytes_written = 0u64;
         let mut bar = ProgressBar::new(48);
 
         // Store chunks for verification (sample every 100MB)
         let mut verification_samples: HashMap<u64, Vec<u8>> = HashMap::new();
 
-        // Write phase
-        while bytes_written < size {
-            let write_size = std::cmp::min(BUFFER_SIZE as u64, size - bytes_written);
-            secure_random_bytes(&mut buffer[..write_size as usize])?;
+        // Write phase using OptimizedIO
+        OptimizedIO::sequential_write(io_handle, size, |buffer| {
+            // Fill buffer with cryptographically secure random data
+            let buf = buffer.as_mut_slice();
+            secure_random_bytes(buf)?;
 
             // Store sample for verification (first 4KB of every 100MB)
             if bytes_written % (100 * 1024 * 1024) == 0 {
-                let sample_size = std::cmp::min(4096, write_size as usize);
+                let sample_size = std::cmp::min(4096, buf.len());
                 verification_samples.insert(
                     bytes_written,
-                    buffer[..sample_size].to_vec()
+                    buf[..sample_size].to_vec()
                 );
             }
 
-            file.write_all(&buffer[..write_size as usize])?;
-            bytes_written += write_size;
+            bytes_written += buf.len() as u64;
 
             // Update progress
-            if bytes_written % (100 * 1024 * 1024) == 0 || bytes_written == size {
+            if bytes_written % (100 * 1024 * 1024) == 0 || bytes_written >= size {
                 let progress = (bytes_written as f64 / size as f64) * 50.0; // First 50% for writing
                 bar.render(progress, Some(bytes_written), Some(size));
             }
-        }
 
-        // Sync to ensure data is written
-        file.sync_data()?;
+            Ok(())
+        })?;
 
         // Verification phase - verify random data has high entropy
         println!("\n  🔍 Verifying pass {} randomness...", pass_num + 1);
-        Self::verify_random_entropy(file, size, &verification_samples, &mut bar)?;
+        Self::verify_random_entropy_from_device(&io_handle.device_path, size, &verification_samples, &mut bar)?;
 
         bar.render(100.0, Some(size), Some(size));
         Ok(())
     }
 
-    /// Verify that a pattern was written correctly
-    pub(crate) fn verify_pattern(
-        file: &mut File,
+    /// Verify that a pattern was written correctly (uses separate file handle for reading)
+    pub(crate) fn verify_pattern_from_device(
+        device_path: &str,
         size: u64,
         expected_pattern: &[u8],
         bar: &mut ProgressBar
     ) -> Result<()> {
+        use std::fs::OpenOptions;
+
         const SAMPLE_SIZE: usize = 4096;
         let mut buffer = vec![0u8; SAMPLE_SIZE];
+
+        // Open device for reading
+        let mut file = OpenOptions::new()
+            .read(true)
+            .open(device_path)?;
 
         // Verify samples throughout the drive
         let num_samples = std::cmp::min(1000, (size / SAMPLE_SIZE as u64) as usize);
@@ -313,13 +313,20 @@ impl GutmannWipe {
         Ok(())
     }
 
-    /// Verify random data has sufficient entropy
-    pub(crate) fn verify_random_entropy(
-        file: &mut File,
+    /// Verify random data has sufficient entropy (uses separate file handle for reading)
+    pub(crate) fn verify_random_entropy_from_device(
+        device_path: &str,
         size: u64,
         samples: &HashMap<u64, Vec<u8>>,
         bar: &mut ProgressBar
     ) -> Result<()> {
+        use std::fs::OpenOptions;
+
+        // Open device for reading
+        let mut file = OpenOptions::new()
+            .read(true)
+            .open(device_path)?;
+
         // Verify stored samples match what's on disk
         let num_samples = samples.len();
         let mut verified = 0;
