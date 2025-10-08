@@ -485,24 +485,21 @@ impl SEDManager {
         println!("Verifying cryptographic erase effectiveness...");
 
         // Read some sectors to check for encrypted vs zeros/random
-        use std::fs::OpenOptions;
-        use std::io::{Read, Seek, SeekFrom};
+        use crate::io::{OptimizedIO, IOConfig};
 
-        let mut file = OpenOptions::new()
-            .read(true)
-            .open(device_path)
-            .map_err(|e| DriveError::IoError(e))?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)
+            .map_err(|e| DriveError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
-        let mut buffer = vec![0u8; 4096];
         let mut all_zero = true;
         let mut all_ff = true;
 
         // Sample multiple locations
         for offset in [0, 1024*1024, 1024*1024*1024].iter() {
-            file.seek(SeekFrom::Start(*offset))
-                .map_err(|e| DriveError::IoError(e))?;
-            
-            if file.read_exact(&mut buffer).is_ok() {
+            let buffer = OptimizedIO::read_range(&mut handle, *offset, 4096)
+                .unwrap_or_else(|_| vec![]);
+
+            if !buffer.is_empty() {
                 if !buffer.iter().all(|&b| b == 0) {
                     all_zero = false;
                 }

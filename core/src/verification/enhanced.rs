@@ -1,11 +1,10 @@
 use anyhow::Result;
 use rand::Rng;
-use std::fs::OpenOptions;
-use std::io::{Read, Write, Seek, SeekFrom};
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 use std::process::Command;
+use crate::io::{OptimizedIO, IOConfig, IOHandle};
 
 /// Enhanced verification system with comprehensive forensic analysis
 pub struct EnhancedVerification;
@@ -352,7 +351,8 @@ impl EnhancedVerification {
         println!("  ├─ Checking {} sectors systematically...", sectors_to_check);
 
         let mut samples = Vec::new();
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         for i in 0..sectors_to_check {
             let sector_num = i * every_nth;
@@ -362,12 +362,8 @@ impl EnhancedVerification {
                 break;
             }
 
-            let mut buffer = vec![0u8; sector_size as usize];
-            file.seek(SeekFrom::Start(offset))?;
-
-            if file.read_exact(&mut buffer).is_ok() {
-                samples.extend_from_slice(&buffer);
-            }
+            let buffer = OptimizedIO::read_range(&mut handle, offset, sector_size as usize)?;
+            samples.extend_from_slice(&buffer);
 
             if i % 1000 == 0 {
                 println!("    Progress: {}/{} sectors", i, sectors_to_check);
@@ -383,28 +379,28 @@ impl EnhancedVerification {
         println!("  📊 Level 3: Full Scan (100% of drive)");
         println!("  ⚠️  Warning: This will take a long time!");
 
-        let chunk_size = 1024 * 1024; // 1MB chunks
-        let total_chunks = device_size / chunk_size;
-
         let mut all_samples = Vec::new();
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::verification_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
-        for chunk_num in 0..total_chunks {
-            let offset = chunk_num * chunk_size;
-            let mut buffer = vec![0u8; chunk_size as usize];
+        let mut bytes_read = 0u64;
+        let mut chunk_num = 0u64;
 
-            file.seek(SeekFrom::Start(offset))?;
-            if file.read_exact(&mut buffer).is_ok() {
-                // Analyze every 10th chunk to avoid memory overflow
-                if chunk_num % 10 == 0 {
-                    all_samples.extend_from_slice(&buffer);
-                }
+        OptimizedIO::sequential_read(&mut handle, device_size, |buffer, bytes| {
+            // Analyze every 10th chunk to avoid memory overflow
+            if chunk_num % 10 == 0 {
+                all_samples.extend_from_slice(&buffer.as_slice()[..bytes]);
             }
+
+            bytes_read += bytes as u64;
+            chunk_num += 1;
 
             if chunk_num % 100 == 0 {
-                println!("    Progress: {:.1}%", (chunk_num as f64 / total_chunks as f64) * 100.0);
+                println!("    Progress: {:.1}%", (bytes_read as f64 / device_size as f64) * 100.0);
             }
-        }
+
+            Ok(())
+        })?;
 
         Self::analyze_samples(device_path, device_size, all_samples, false)
     }
@@ -535,17 +531,15 @@ impl EnhancedVerification {
 
     fn verify_hpa_sectors(device_path: &str, hpa_info: &HPAInfo) -> Result<f64> {
         // Read HPA area and calculate entropy
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         // Calculate HPA start offset
         let device_size = Self::get_device_size(device_path)?;
         let hpa_offset = device_size - (hpa_info.hidden_sectors * 512);
 
         let sample_size = (hpa_info.hidden_sectors * 512).min(10 * 1024 * 1024);
-        let mut buffer = vec![0u8; sample_size as usize];
-
-        file.seek(SeekFrom::Start(hpa_offset))?;
-        file.read_exact(&mut buffer)?;
+        let buffer = OptimizedIO::read_range(&mut handle, hpa_offset, sample_size as usize)?;
 
         Self::calculate_entropy(&buffer)
     }
@@ -613,28 +607,21 @@ impl EnhancedVerification {
 
     fn simulate_recovery_tools_test(device_path: &str, test_offset: u64) -> Result<bool> {
         // Write known file signatures and try to detect them
-        let mut file = OpenOptions::new()
-            .write(true)
-            .read(true)
-            .open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         // Write a JPEG signature
-        file.seek(SeekFrom::Start(test_offset))?;
-        file.write_all(b"\xFF\xD8\xFF\xE0")?;
-        file.sync_all()?;
+        handle.write_at(b"\xFF\xD8\xFF\xE0", test_offset)?;
+        handle.sync()?;
 
         // Try to detect it
-        let mut buffer = vec![0u8; 4096];
-        file.seek(SeekFrom::Start(test_offset))?;
-        file.read_exact(&mut buffer)?;
-
+        let buffer = OptimizedIO::read_range(&mut handle, test_offset, 4096)?;
         let detected = buffer.windows(4).any(|w| w == b"\xFF\xD8\xFF\xE0");
 
         // Clean up
         let zeros = vec![0u8; 4096];
-        file.seek(SeekFrom::Start(test_offset))?;
-        file.write_all(&zeros)?;
-        file.sync_all()?;
+        handle.write_at(&zeros, test_offset)?;
+        handle.sync()?;
 
         Ok(detected)
     }
@@ -683,7 +670,8 @@ impl EnhancedVerification {
 
     fn simulate_photorec(device_path: &str, device_size: u64) -> Result<PhotoRecResults> {
         let mut found_signatures = Vec::new();
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         // Sample 10% of drive in random locations
         let sample_count = 1000;
@@ -693,12 +681,11 @@ impl EnhancedVerification {
 
         for _ in 0..sample_count {
             let offset = rng.gen_range(0..device_size.saturating_sub(chunk_size));
-            let mut buffer = vec![0u8; chunk_size as usize];
 
-            file.seek(SeekFrom::Start(offset))?;
-            if file.read_exact(&mut buffer).is_err() {
-                continue;
-            }
+            let buffer = match OptimizedIO::read_range(&mut handle, offset, chunk_size as usize) {
+                Ok(buf) => buf,
+                Err(_) => continue,
+            };
 
             // Check for all known file signatures
             for sig in Self::FILE_SIGNATURES {
@@ -728,16 +715,17 @@ impl EnhancedVerification {
     }
 
     fn simulate_testdisk(device_path: &str) -> Result<TestDiskResults> {
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         // Check MBR signature
-        let mbr_found = Self::check_mbr_signature(&mut file)?;
+        let mbr_found = Self::check_mbr_signature(&mut handle)?;
 
         // Check GPT header
-        let gpt_found = Self::check_gpt_header(&mut file)?;
+        let gpt_found = Self::check_gpt_header(&mut handle)?;
 
         // Check filesystem signatures
-        let fs_signatures = Self::check_filesystem_signatures(&mut file)?;
+        let fs_signatures = Self::check_filesystem_signatures(&mut handle)?;
 
         let partition_recoverable = mbr_found || gpt_found;
         let would_succeed = partition_recoverable || !fs_signatures.is_empty();
@@ -751,58 +739,46 @@ impl EnhancedVerification {
         })
     }
 
-    fn check_mbr_signature(file: &mut std::fs::File) -> Result<bool> {
-        let mut buffer = vec![0u8; 512];
-        file.seek(SeekFrom::Start(0))?;
-        file.read_exact(&mut buffer)?;
+    fn check_mbr_signature(handle: &mut IOHandle) -> Result<bool> {
+        let buffer = OptimizedIO::read_range(handle, 0, 512)?;
 
         // Check for MBR signature at bytes 510-511
-        Ok(buffer[510] == 0x55 && buffer[511] == 0xAA)
+        Ok(buffer.len() >= 512 && buffer[510] == 0x55 && buffer[511] == 0xAA)
     }
 
-    fn check_gpt_header(file: &mut std::fs::File) -> Result<bool> {
-        let mut buffer = vec![0u8; 512];
-        file.seek(SeekFrom::Start(512))?; // GPT starts at LBA 1
-        file.read_exact(&mut buffer)?;
+    fn check_gpt_header(handle: &mut IOHandle) -> Result<bool> {
+        let buffer = OptimizedIO::read_range(handle, 512, 512)?; // GPT starts at LBA 1
 
         // Check for "EFI PART" signature
-        Ok(&buffer[0..8] == b"EFI PART")
+        Ok(buffer.len() >= 8 && &buffer[0..8] == b"EFI PART")
     }
 
-    fn check_filesystem_signatures(file: &mut std::fs::File) -> Result<Vec<String>> {
+    fn check_filesystem_signatures(handle: &mut IOHandle) -> Result<Vec<String>> {
         let mut signatures = Vec::new();
 
         // Check ext2/3/4 superblock
-        let mut buffer = vec![0u8; 1024];
-        file.seek(SeekFrom::Start(1024))?;
-        if file.read_exact(&mut buffer).is_ok() {
-            if buffer[56..58] == [0x53, 0xEF] {
+        if let Ok(buffer) = OptimizedIO::read_range(handle, 1024, 1024) {
+            if buffer.len() >= 58 && buffer[56..58] == [0x53, 0xEF] {
                 signatures.push("ext2/3/4".to_string());
             }
         }
 
         // Check NTFS
-        file.seek(SeekFrom::Start(3))?;
-        let mut buffer = vec![0u8; 8];
-        if file.read_exact(&mut buffer).is_ok() {
+        if let Ok(buffer) = OptimizedIO::read_range(handle, 3, 8) {
             if &buffer == b"NTFS    " {
                 signatures.push("NTFS".to_string());
             }
         }
 
         // Check FAT
-        file.seek(SeekFrom::Start(54))?;
-        let mut buffer = vec![0u8; 8];
-        if file.read_exact(&mut buffer).is_ok() {
+        if let Ok(buffer) = OptimizedIO::read_range(handle, 54, 8) {
             if buffer.starts_with(b"FAT") {
                 signatures.push("FAT".to_string());
             }
         }
 
         // Check XFS
-        file.seek(SeekFrom::Start(0))?;
-        let mut buffer = vec![0u8; 4];
-        if file.read_exact(&mut buffer).is_ok() {
+        if let Ok(buffer) = OptimizedIO::read_range(handle, 0, 4) {
             if &buffer == b"XFSB" {
                 signatures.push("XFS".to_string());
             }
@@ -812,13 +788,14 @@ impl EnhancedVerification {
     }
 
     fn check_filesystem_metadata(device_path: &str) -> Result<FilesystemMetadataResults> {
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
-        let superblock_remnants = Self::check_filesystem_signatures(&mut file)?;
+        let superblock_remnants = Self::check_filesystem_signatures(&mut handle)?;
         let inode_structures = Self::check_for_inodes()?;
         let journal_data = Self::check_for_journal()?;
         let fat_tables = Self::check_for_fat_tables()?;
-        let ntfs_mft = Self::check_for_mft(&mut file)?;
+        let ntfs_mft = Self::check_for_mft(&mut handle)?;
 
         Ok(FilesystemMetadataResults {
             superblock_remnants,
@@ -845,11 +822,9 @@ impl EnhancedVerification {
         Ok(false)
     }
 
-    fn check_for_mft(file: &mut std::fs::File) -> Result<bool> {
+    fn check_for_mft(handle: &mut IOHandle) -> Result<bool> {
         // Check for NTFS Master File Table
-        let mut buffer = vec![0u8; 4];
-        file.seek(SeekFrom::Start(0))?;
-        if file.read_exact(&mut buffer).is_ok() {
+        if let Ok(buffer) = OptimizedIO::read_range(handle, 0, 4) {
             return Ok(&buffer == b"FILE");
         }
         Ok(false)
@@ -859,7 +834,9 @@ impl EnhancedVerification {
         // Magnetic Force Microscopy simulation
         // This simulates whether magnetic flux transitions could reveal previous data
 
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
+
         let mut suspicious_transitions = 0u64;
         let sample_count = 100;
 
@@ -868,12 +845,11 @@ impl EnhancedVerification {
 
         for _ in 0..sample_count {
             let offset = rng.gen_range(0..device_size - 512);
-            let mut buffer = vec![0u8; 512];
 
-            file.seek(SeekFrom::Start(offset))?;
-            if file.read_exact(&mut buffer).is_err() {
-                continue;
-            }
+            let buffer = match OptimizedIO::read_range(&mut handle, offset, 512) {
+                Ok(buf) => buf,
+                Err(_) => continue,
+            };
 
             // Analyze bit transitions
             // Look for patterns suggesting magnetic hysteresis
@@ -971,7 +947,8 @@ impl EnhancedVerification {
         let mut max_entropy: f32 = 0.0;
         let mut suspicious_blocks = Vec::new();
 
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         for y in 0..height {
             for x in 0..width {
@@ -979,18 +956,17 @@ impl EnhancedVerification {
                 let offset = block_num * block_size;
 
                 let read_size = block_size.min(65536) as usize;
-                let mut buffer = vec![0u8; read_size];
 
-                file.seek(SeekFrom::Start(offset))?;
-                if file.read_exact(&mut buffer).is_ok() {
-                    let entropy = Self::calculate_entropy(&buffer)?;
-                    cells[y][x] = entropy;
+                if let Ok(buffer) = OptimizedIO::read_range(&mut handle, offset, read_size) {
+                    if let Ok(entropy) = Self::calculate_entropy(&buffer) {
+                        cells[y][x] = entropy;
 
-                    min_entropy = min_entropy.min(entropy as f32);
-                    max_entropy = max_entropy.max(entropy as f32);
+                        min_entropy = min_entropy.min(entropy as f32);
+                        max_entropy = max_entropy.max(entropy as f32);
 
-                    if entropy < 6.0 {
-                        suspicious_blocks.push((x, y));
+                        if entropy < 6.0 {
+                            suspicious_blocks.push((x, y));
+                        }
                     }
                 }
             }
@@ -1113,7 +1089,9 @@ impl EnhancedVerification {
         let total_sectors = device_size / sector_size;
         let samples_per_region = 100;
 
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
+
         let mut suspicious = 0u64;
         let mut entropy_dist = Vec::new();
         let mut anomalies = Vec::new();
@@ -1127,11 +1105,8 @@ impl EnhancedVerification {
             let sector_num = rng.gen_range(0..total_sectors);
             let offset = sector_num * sector_size;
 
-            let mut buffer = vec![0u8; sector_size as usize];
-            file.seek(SeekFrom::Start(offset))?;
-
-            match file.read_exact(&mut buffer) {
-                Ok(_) => {
+            match OptimizedIO::read_range(&mut handle, offset, sector_size as usize) {
+                Ok(buffer) => {
                     if let Ok(entropy) = Self::calculate_entropy(&buffer) {
                         entropy_dist.push(entropy);
 
@@ -1140,10 +1115,6 @@ impl EnhancedVerification {
                             anomalies.push(sector_num);
                         }
                     }
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-                    bad_sectors.push(sector_num);
-                    unreadable += 1;
                 }
                 Err(_) => {
                     bad_sectors.push(sector_num);
@@ -1175,7 +1146,8 @@ impl EnhancedVerification {
         sample_size: u64,
     ) -> Result<Vec<u8>> {
         let mut samples = Vec::with_capacity(sample_size as usize);
-        let mut file = OpenOptions::new().read(true).open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         // Stratified sampling: beginning, middle, end
         let regions = vec![
@@ -1185,9 +1157,7 @@ impl EnhancedVerification {
         ];
 
         for (offset, size) in regions {
-            let mut buffer = vec![0u8; size as usize];
-            file.seek(SeekFrom::Start(offset))?;
-            if file.read_exact(&mut buffer).is_ok() {
+            if let Ok(buffer) = OptimizedIO::read_range(&mut handle, offset, size as usize) {
                 samples.extend_from_slice(&buffer);
             }
         }
@@ -1199,9 +1169,7 @@ impl EnhancedVerification {
 
         for _ in 0..(remaining / chunk_size) {
             let random_offset = rng.gen_range(0..device_size.saturating_sub(chunk_size));
-            let mut buffer = vec![0u8; chunk_size as usize];
-            file.seek(SeekFrom::Start(random_offset))?;
-            if file.read_exact(&mut buffer).is_ok() {
+            if let Ok(buffer) = OptimizedIO::read_range(&mut handle, random_offset, chunk_size as usize) {
                 samples.extend_from_slice(&buffer);
             }
         }
@@ -1452,19 +1420,14 @@ impl EnhancedVerification {
             b"BEGIN_SENSITIVE_DATA_MARKER_END".to_vec(),
         ];
 
-        let mut file = OpenOptions::new()
-            .write(true)
-            .read(true)
-            .open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         for pattern in &patterns {
-            file.seek(SeekFrom::Start(offset))?;
-            file.write_all(pattern)?;
-            file.sync_all()?;
+            handle.write_at(pattern, offset)?;
+            handle.sync()?;
 
-            let mut buffer = vec![0u8; pattern.len()];
-            file.seek(SeekFrom::Start(offset))?;
-            file.read_exact(&mut buffer)?;
+            let buffer = OptimizedIO::read_range(&mut handle, offset, pattern.len())?;
 
             if buffer != *pattern {
                 return Ok(false);
@@ -1472,9 +1435,8 @@ impl EnhancedVerification {
         }
 
         let zeros = vec![0u8; 4096];
-        file.seek(SeekFrom::Start(offset))?;
-        file.write_all(&zeros)?;
-        file.sync_all()?;
+        handle.write_at(&zeros, offset)?;
+        handle.sync()?;
 
         Ok(true)
     }
@@ -1484,21 +1446,16 @@ impl EnhancedVerification {
         let test_count = 10;
         let mut detected_count = 0;
 
-        let mut file = OpenOptions::new()
-            .write(true)
-            .read(true)
-            .open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         for i in 0..test_count {
             let pattern = vec![(i * 25) as u8; 1024];
 
-            file.seek(SeekFrom::Start(test_offset))?;
-            file.write_all(&pattern)?;
-            file.sync_all()?;
+            handle.write_at(&pattern, test_offset)?;
+            handle.sync()?;
 
-            let mut buffer = vec![0u8; 1024];
-            file.seek(SeekFrom::Start(test_offset))?;
-            file.read_exact(&mut buffer)?;
+            let buffer = OptimizedIO::read_range(&mut handle, test_offset, 1024)?;
 
             if Self::detect_suspicious_data(&buffer) {
                 detected_count += 1;
@@ -1507,9 +1464,8 @@ impl EnhancedVerification {
 
         // Clean up
         let zeros = vec![0u8; 4096];
-        file.seek(SeekFrom::Start(test_offset))?;
-        file.write_all(&zeros)?;
-        file.sync_all()?;
+        handle.write_at(&zeros, test_offset)?;
+        handle.sync()?;
 
         Ok((detected_count as f64 / test_count as f64) * 100.0)
     }
@@ -1519,10 +1475,8 @@ impl EnhancedVerification {
         let mut false_positives = 0;
         let mut false_negatives = 0;
 
-        let mut file = OpenOptions::new()
-            .write(true)
-            .read(true)
-            .open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         use crate::crypto::secure_rng::secure_random_bytes;
 
@@ -1532,13 +1486,10 @@ impl EnhancedVerification {
                 let mut random = vec![0u8; 1024];
                 secure_random_bytes(&mut random)?;
 
-                file.seek(SeekFrom::Start(test_offset))?;
-                file.write_all(&random)?;
-                file.sync_all()?;
+                handle.write_at(&random, test_offset)?;
+                handle.sync()?;
 
-                let mut buffer = vec![0u8; 1024];
-                file.seek(SeekFrom::Start(test_offset))?;
-                file.read_exact(&mut buffer)?;
+                let buffer = OptimizedIO::read_range(&mut handle, test_offset, 1024)?;
 
                 if Self::detect_suspicious_data(&buffer) {
                     false_positives += 1;
@@ -1547,13 +1498,10 @@ impl EnhancedVerification {
                 // Test false negative: write known pattern
                 let pattern = b"SENSITIVE_DATA_PATTERN_12345678".to_vec();
 
-                file.seek(SeekFrom::Start(test_offset))?;
-                file.write_all(&pattern)?;
-                file.sync_all()?;
+                handle.write_at(&pattern, test_offset)?;
+                handle.sync()?;
 
-                let mut buffer = vec![0u8; pattern.len()];
-                file.seek(SeekFrom::Start(test_offset))?;
-                file.read_exact(&mut buffer)?;
+                let buffer = OptimizedIO::read_range(&mut handle, test_offset, pattern.len())?;
 
                 if !Self::detect_suspicious_data(&buffer) {
                     false_negatives += 1;
@@ -1566,9 +1514,8 @@ impl EnhancedVerification {
 
         // Clean up
         let zeros = vec![0u8; 4096];
-        file.seek(SeekFrom::Start(test_offset))?;
-        file.write_all(&zeros)?;
-        file.sync_all()?;
+        handle.write_at(&zeros, test_offset)?;
+        handle.sync()?;
 
         Ok((fp_rate, fn_rate))
     }

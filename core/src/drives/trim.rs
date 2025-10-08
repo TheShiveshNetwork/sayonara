@@ -1,7 +1,5 @@
 use crate::{DriveError, DriveResult, DriveType};
 use std::process::Command;
-use std::fs::{OpenOptions};
-use std::io::{self, Seek, SeekFrom};
 
 pub struct TrimOperations;
 
@@ -160,10 +158,10 @@ impl TrimOperations {
     pub fn verify_trim_effectiveness(device_path: &str, sample_size: usize) -> DriveResult<bool> {
         println!("Verifying TRIM effectiveness...");
 
-        let mut file = OpenOptions::new()
-            .read(true)
-            .open(device_path)
-            .map_err(|e| DriveError::IoError(e))?;
+        use crate::io::{OptimizedIO, IOConfig};
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)
+            .map_err(|e| DriveError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
         // Sample random locations
         let device_size = Self::get_device_size(device_path)?;
@@ -175,11 +173,11 @@ impl TrimOperations {
 
         for _ in 0..sample_size {
             let offset = rng.gen_range(0..device_size - 4096);
-            file.seek(SeekFrom::Start(offset))
-                .map_err(|e| DriveError::IoError(e))?;
 
-            let mut buffer = vec![0u8; 4096];
-            if io::Read::read(&mut file, &mut buffer).is_ok() {
+            let buffer = OptimizedIO::read_range(&mut handle, offset, 4096)
+                .unwrap_or_else(|_| vec![]);
+
+            if !buffer.is_empty() {
                 // Check if buffer is all zeros or pattern indicating TRIM
                 if buffer.iter().all(|&b| b == 0) ||
                     buffer.iter().all(|&b| b == 0xFF) ||

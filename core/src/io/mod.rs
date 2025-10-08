@@ -2,6 +2,8 @@ pub mod optimized_engine;
 pub mod buffer_pool;
 pub mod platform_specific;
 pub mod metrics;
+pub mod io_uring_engine;
+pub mod mmap_engine;
 
 #[cfg(test)]
 mod tests;

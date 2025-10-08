@@ -1,8 +1,7 @@
 use anyhow::Result;
 use crate::crypto::secure_rng::secure_random_bytes;
-use std::fs::OpenOptions;
-use std::io::{Read, Seek, SeekFrom};
 use crate::ui::progress::ProgressBar;
+use crate::io::{OptimizedIO, IOConfig};
 
 pub struct RecoveryTest;
 
@@ -57,14 +56,10 @@ impl RecoveryTest {
     }
 
     fn verify_sector_wiped(device_path: &str, offset: u64) -> Result<bool> {
-        let mut file = OpenOptions::new()
-            .read(true)
-            .open(device_path)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
-        file.seek(SeekFrom::Start(offset))?;
-
-        let mut buffer = vec![0u8; 4096]; // Read 4KB
-        file.read_exact(&mut buffer)?;
+        let buffer = OptimizedIO::read_range(&mut handle, offset, 4096)?;
 
         let zero_count = buffer.iter().filter(|&&b| b == 0).count();
         let ff_count = buffer.iter().filter(|&&b| b == 0xFF).count();
@@ -76,14 +71,11 @@ impl RecoveryTest {
     }
 
     fn calculate_entropy(device_path: &str, size: u64, bar: &mut ProgressBar) -> Result<f64> {
-        let mut file = OpenOptions::new()
-            .read(true)
-            .open(device_path)?;
+        let config = IOConfig::verification_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         let sample_size = std::cmp::min(100 * 1024 * 1024, size);
-        let mut buffer = vec![0u8; sample_size as usize];
-
-        file.read_exact(&mut buffer)?;
+        let buffer = OptimizedIO::read_range(&mut handle, 0, sample_size as usize)?;
 
         let mut counts = [0u64; 256];
         let mut processed = 0usize;

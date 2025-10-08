@@ -109,6 +109,36 @@ impl IOConfig {
             target_efficiency: 90.0,  // HDDs have more overhead
         }
     }
+
+    /// Create config optimized for verification reads (high performance)
+    pub fn verification_optimized() -> Self {
+        Self {
+            use_direct_io: true,
+            initial_buffer_size: 8 * 1024 * 1024,   // 8MB buffers for fast reads
+            max_buffer_size: 16 * 1024 * 1024,      // 16MB
+            queue_depth: 16,                        // Higher queue depth for reads
+            max_buffers: 32,
+            temperature_threshold: 70,              // Can tolerate higher temps for reads
+            temperature_check_interval: 500 * 1024 * 1024,  // 500MB
+            adaptive_tuning: true,
+            target_efficiency: 95.0,
+        }
+    }
+
+    /// Create config for small random reads (detection, sampling)
+    pub fn small_read_optimized() -> Self {
+        Self {
+            use_direct_io: false,  // Don't use Direct I/O for small reads
+            initial_buffer_size: 64 * 1024,   // 64KB - small buffers
+            max_buffer_size: 256 * 1024,      // 256KB
+            queue_depth: 4,
+            max_buffers: 16,
+            temperature_threshold: 70,
+            temperature_check_interval: u64::MAX,  // No temp checks for small ops
+            adaptive_tuning: false,  // Fixed config for small reads
+            target_efficiency: 80.0,
+        }
+    }
 }
 
 /// Optimized I/O Handle
@@ -142,6 +172,23 @@ impl IOHandle {
     /// Write entire buffer using optimal I/O
     pub fn write_buffer(&mut self, buffer: &PooledBuffer, offset: u64) -> IOResult<usize> {
         self.write_at(buffer.as_slice(), offset)
+    }
+
+    /// Read data at the specified offset
+    pub fn read_at(&mut self, buffer: &mut [u8], offset: u64) -> IOResult<usize> {
+        let start = Instant::now();
+
+        let read = self.platform_io.read_optimized(&self.file, buffer, offset)?;
+
+        let latency = start.elapsed();
+        self.metrics.record_operation(read as u64, latency);
+
+        Ok(read)
+    }
+
+    /// Read into a pooled buffer
+    pub fn read_buffer(&mut self, buffer: &mut PooledBuffer, offset: u64) -> IOResult<usize> {
+        self.read_at(buffer.as_mut_slice(), offset)
     }
 
     /// Sync all data to disk
@@ -324,6 +371,62 @@ impl OptimizedIO {
         handle.sync()?;
 
         Ok(())
+    }
+
+    /// Perform a full sequential read with optimizations
+    pub fn sequential_read<F>(
+        handle: &mut IOHandle,
+        total_size: u64,
+        mut process_buffer: F,
+    ) -> IOResult<()>
+    where
+        F: FnMut(&PooledBuffer, usize) -> IOResult<()>,
+    {
+        let mut offset = 0u64;
+
+        while offset < total_size {
+            // Acquire buffer from pool
+            let mut buffer = handle.acquire_buffer()?;
+
+            // Read from device
+            let bytes_read = handle.read_buffer(&mut buffer, offset)?;
+
+            if bytes_read == 0 {
+                return Err(IOError::OperationFailed(
+                    format!("Unexpected EOF at offset {}", offset)
+                ));
+            }
+
+            // Process the read data
+            process_buffer(&buffer, bytes_read)?;
+
+            offset += bytes_read as u64;
+
+            // Adaptive tuning if enabled
+            if let Some(ref tuner) = handle.tuner {
+                let stats = handle.metrics.stats();
+                if stats.elapsed.as_secs() > 0 && stats.throughput_bps > 0 {
+                    let _ = tuner.record_and_tune(
+                        bytes_read as u64,
+                        stats.avg_latency
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Read a specific range into a single buffer
+    pub fn read_range(
+        handle: &mut IOHandle,
+        offset: u64,
+        size: usize,
+    ) -> IOResult<Vec<u8>> {
+        let mut data = vec![0u8; size];
+        let bytes_read = handle.read_at(&mut data, offset)?;
+        data.truncate(bytes_read);
+        Ok(data)
     }
 
     /// Print final performance report

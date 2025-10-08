@@ -300,14 +300,11 @@ impl DriveDetector {
     /// Check for BitLocker encryption
     fn check_bitlocker(device_path: &str) -> Result<bool> {
         // Read first sectors to check for BitLocker signature
-        use std::fs::File;
-        use std::io::{Read, Seek, SeekFrom};
+        use crate::io::{OptimizedIO, IOConfig};
 
-        let mut file = File::open(device_path)?;
-        let mut buffer = vec![0u8; 512];
-
-        file.seek(SeekFrom::Start(0))?;
-        file.read_exact(&mut buffer)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
+        let buffer = OptimizedIO::read_range(&mut handle, 0, 512)?;
 
         // BitLocker signature "-FVE-FS-"
         let signature = b"-FVE-FS-";
@@ -317,14 +314,11 @@ impl DriveDetector {
     /// Check for FileVault encryption
     fn check_filevault(device_path: &str) -> Result<bool> {
         // Check for Core Storage or APFS encryption
-        use std::fs::File;
-        use std::io::{Read, Seek, SeekFrom};
+        use crate::io::{OptimizedIO, IOConfig};
 
-        let mut file = File::open(device_path)?;
-        let mut buffer = vec![0u8; 4096];
-
-        file.seek(SeekFrom::Start(0))?;
-        file.read_exact(&mut buffer)?;
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
+        let buffer = OptimizedIO::read_range(&mut handle, 0, 4096)?;
 
         // Check for Core Storage or APFS signatures
         Ok(buffer.windows(8).any(|w| {
@@ -336,15 +330,11 @@ impl DriveDetector {
     /// Check for VeraCrypt encryption
     fn check_veracrypt(device_path: &str) -> Result<bool> {
         // VeraCrypt doesn't have a clear signature, but we can check for high entropy
-        use std::fs::File;
-        use std::io::{Read, Seek, SeekFrom};
+        use crate::io::{OptimizedIO, IOConfig};
 
-        let mut file = File::open(device_path)?;
-        let mut buffer = vec![0u8; 65536]; // Read 64KB
-
-        file.seek(SeekFrom::Start(0))?;
-        let bytes_read = file.read(&mut buffer)?;
-        buffer.truncate(bytes_read);
+        let config = IOConfig::small_read_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
+        let buffer = OptimizedIO::read_range(&mut handle, 0, 65536)?; // Read 64KB
 
         // Calculate entropy
         let entropy = Self::calculate_entropy(&buffer);

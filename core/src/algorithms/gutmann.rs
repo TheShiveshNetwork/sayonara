@@ -1,6 +1,5 @@
 use anyhow::{Result, anyhow};
 use crate::crypto::secure_rng::secure_random_bytes;
-use std::io::{Read, Seek, SeekFrom};
 use std::collections::HashMap;
 use std::time::Instant;
 use crate::ui::progress::ProgressBar;
@@ -273,15 +272,11 @@ impl GutmannWipe {
         expected_pattern: &[u8],
         bar: &mut ProgressBar
     ) -> Result<()> {
-        use std::fs::OpenOptions;
-
         const SAMPLE_SIZE: usize = 4096;
-        let mut buffer = vec![0u8; SAMPLE_SIZE];
 
-        // Open device for reading
-        let mut file = OpenOptions::new()
-            .read(true)
-            .open(device_path)?;
+        // Open device for reading with optimized I/O
+        let config = IOConfig::verification_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         // Verify samples throughout the drive
         let num_samples = std::cmp::min(1000, (size / SAMPLE_SIZE as u64) as usize);
@@ -289,13 +284,12 @@ impl GutmannWipe {
 
         for i in 0..num_samples {
             let offset = i as u64 * sample_interval;
-            file.seek(SeekFrom::Start(offset))?;
-
             let read_size = std::cmp::min(SAMPLE_SIZE, (size - offset) as usize);
-            file.read_exact(&mut buffer[..read_size])?;
+
+            let buffer = OptimizedIO::read_range(&mut handle, offset, read_size)?;
 
             // Check pattern matches
-            for (j, byte) in buffer[..read_size].iter().enumerate() {
+            for (j, byte) in buffer.iter().enumerate() {
                 let expected = expected_pattern[j % expected_pattern.len()];
                 if *byte != expected {
                     return Err(anyhow!(
@@ -320,21 +314,16 @@ impl GutmannWipe {
         samples: &HashMap<u64, Vec<u8>>,
         bar: &mut ProgressBar
     ) -> Result<()> {
-        use std::fs::OpenOptions;
-
-        // Open device for reading
-        let mut file = OpenOptions::new()
-            .read(true)
-            .open(device_path)?;
+        // Open device for reading with optimized I/O
+        let config = IOConfig::verification_optimized();
+        let mut handle = OptimizedIO::open(device_path, config)?;
 
         // Verify stored samples match what's on disk
         let num_samples = samples.len();
         let mut verified = 0;
 
         for (offset, expected_data) in samples {
-            file.seek(SeekFrom::Start(*offset))?;
-            let mut buffer = vec![0u8; expected_data.len()];
-            file.read_exact(&mut buffer)?;
+            let buffer = OptimizedIO::read_range(&mut handle, *offset, expected_data.len())?;
 
             if buffer != *expected_data {
                 // Check entropy instead of exact match (drive might have done something)
@@ -358,10 +347,8 @@ impl GutmannWipe {
             let mut offset_bytes = [0u8; 8];
             secure_random_bytes(&mut offset_bytes)?;
             let offset = u64::from_le_bytes(offset_bytes) % size.saturating_sub(4096);
-            file.seek(SeekFrom::Start(offset))?;
 
-            let mut buffer = vec![0u8; 4096];
-            if file.read_exact(&mut buffer).is_ok() {
+            if let Ok(buffer) = OptimizedIO::read_range(&mut handle, offset, 4096) {
                 let entropy = Self::calculate_entropy(&buffer);
                 if entropy < 7.0 {
                     println!("  ⚠️  Warning: Lower entropy at offset {}: {:.2} bits/byte",
