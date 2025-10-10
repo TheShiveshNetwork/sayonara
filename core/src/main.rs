@@ -2,15 +2,15 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use sayonara_wipe::*;
 use sayonara_wipe::drives::{
-    detection::DriveDetector,
-    freeze::FreezeMitigation,
-    hpa_dco::HPADCOManager,
-    sed::SEDManager,
-    trim::TrimOperations,
-    smart::SMARTMonitor,
-    hdd::HDDWipe,
-    ssd::SSDWipe,
-    nvme::NVMeWipe,
+    DriveDetector,
+    FreezeMitigation,
+    HPADCOManager,
+    SEDManager,
+    TrimOperations,
+    SMARTMonitor,
+    HDDWipe,
+    SSDWipe,
+    NVMeWipe,
 };
 use sayonara_wipe::algorithms::{dod::DoDWipe, gutmann::GutmannWipe, random::RandomWipe};
 use sayonara_wipe::verification::recovery_test::RecoveryTest;
@@ -1480,7 +1480,7 @@ async fn select_and_execute_wipe(
         }
         DriveType::NVMe => {
             // Check if it's an advanced NVMe (ZNS, multi-namespace, etc.)
-            use sayonara_wipe::drives::nvme_advanced::NVMeAdvanced;
+            use sayonara_wipe::drives::NVMeAdvanced;
             if NVMeAdvanced::detect_advanced_features(device).unwrap_or(false) {
                 println!("🔬 Detected advanced NVMe features (ZNS/Multi-namespace)");
                 println!("Using specialized wipe strategy...\n");
@@ -1771,7 +1771,7 @@ async fn check_health(device: &str, self_test: bool, monitor: bool) -> Result<()
 
             if self_test {
                 println!("\nRunning SMART self-test...");
-                use crate::drives::smart::{SMARTMonitor, SelfTestType};
+                use crate::drives::operations::smart::{SMARTMonitor, SelfTestType};
                 SMARTMonitor::run_self_test(device, SelfTestType::Short)?;
                 println!("Self-test started. Check progress with 'smartctl -l selftest {}'", device);
             }
@@ -1859,7 +1859,7 @@ async fn print_health_status(device: &str) -> Result<()> {
     }
 
     // Failure prediction
-    use crate::drives::smart::SMARTMonitor;
+    use crate::drives::operations::smart::SMARTMonitor;
     let prediction = SMARTMonitor::predict_failure(device)?;
 
     if prediction.risk_score > 0 {

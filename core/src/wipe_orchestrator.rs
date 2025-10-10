@@ -6,13 +6,13 @@
 use crate::{
     DriveInfo, DriveType, WipeConfig, Algorithm, DriveResult, DriveError,
     drives::{
-        smr::SMRDrive,
-        optane::OptaneDrive,
-        hybrid::HybridDrive,
-        emmc::EMMCDevice,
-        nvme_advanced::NVMeAdvanced,
+        SMRDrive,
+        OptaneDrive,
+        HybridDrive,
+        NVMeAdvanced,
     },
 };
+use crate::drives::types::emmc::EMMCDevice;
 use anyhow::Result;
 use std::fs::OpenOptions;
 use std::io::{Write, Seek, SeekFrom};
@@ -273,7 +273,7 @@ impl WipeOrchestrator {
         }
 
         // Import raid module
-        use crate::drives::raid::RAIDArray;
+        use crate::drives::types::raid::RAIDArray;
 
         // Wipe metadata first
         let raid = RAIDArray::get_configuration(&self.device_path)

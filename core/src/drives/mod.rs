@@ -1,28 +1,75 @@
+// Drive detection and operations module
+//
+// Organized structure:
+// - detection.rs: Core drive detection logic
+// - types/: Drive-type specific implementations (HDD, SSD, NVMe, SMR, etc.)
+// - operations/: Drive operations (SMART, TRIM, HPA/DCO, SED)
+// - freeze/: Freeze detection and mitigation
+
+// Core functionality
 pub mod detection;
-pub mod hdd;
-pub mod ssd;
-pub mod nvme;
-pub mod freeze;          // CHANGED: Now a module instead of individual files
-pub mod hpa_dco;
-pub mod sed;
-pub mod trim;
-pub mod smart;
 
-// NEW: Step 6 - Advanced drive support
-pub mod smr;             // Shingled Magnetic Recording
-pub mod optane;          // Intel Optane / 3D XPoint
-pub mod hybrid;          // Hybrid SSHD drives
-pub mod raid;            // RAID array handling
-pub mod emmc;            // eMMC/UFS embedded storage
-pub mod nvme_advanced;   // Advanced NVMe: ZNS, multiple namespaces, KV, computational
+// Drive types (organized by category)
+pub mod types;
 
-// Re-exports
+// Drive operations
+pub mod operations;
+
+// Freeze mitigation (already well-organized)
+pub mod freeze;
+
+// Re-exports for backward compatibility and convenience
 pub use detection::DriveDetector;
-pub use hdd::HDDWipe;
-pub use ssd::SSDWipe;
-pub use nvme::NVMeWipe;
 
-// UPDATED: Import from freeze module
+// Drive types
+pub use types::{
+    // Basic types
+    HDDWipe,
+    SSDWipe,
+    NVMeWipe,
+
+    // Advanced NVMe
+    NVMeAdvanced,
+    NVMeNamespace,
+    NamespaceType,
+    ZNSZone,
+    ZNSZoneState,
+
+    // Advanced drive types (Phase 1, Step 6)
+    SMRDrive,
+    Zone,
+    ZoneType,
+    ZoneCondition,
+    ZoneModel,
+    OptaneDrive,
+    OptaneMode,
+    OptaneNamespace,
+    HybridDrive,
+    HDDInfo,
+    SSDCacheInfo,
+    PinnedRegion,
+    EMMCDevice,
+    BootPartition,
+    RPMBPartition,
+    UserDataArea,
+    UFSDevice,
+    UFSLogicalUnit,
+    RAIDArray,
+    RAIDType,
+    RAIDController,
+    MetadataRegion,
+    MetadataLocation,
+};
+
+// Operations
+pub use operations::{
+    HPADCOManager,
+    SEDManager,
+    TrimOperations,
+    SMARTMonitor,
+};
+
+// Freeze mitigation
 pub use freeze::{
     // Basic freeze mitigation
     FreezeMitigation,
@@ -45,8 +92,3 @@ pub use freeze::{
     FreezeMitigationStrategy,
     get_mitigation,
 };
-
-pub use hpa_dco::HPADCOManager;
-pub use sed::SEDManager;
-pub use trim::TrimOperations;
-pub use smart::SMARTMonitor;
