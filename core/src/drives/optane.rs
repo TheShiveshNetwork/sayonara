@@ -294,21 +294,56 @@ impl OptaneDrive {
         println!("Performing Instant Secure Erase on {}...", self.device_path);
         println!("This will cryptographically erase all data instantly.");
 
-        // Use nvme format with crypto erase
+        // Try multiple ISE methods with fallback
+        // Method 1: nvme format with crypto-erase (preferred)
+        if self.try_nvme_format_crypto().is_ok() {
+            println!("✅ ISE via nvme format completed successfully");
+            return Ok(());
+        }
+
+        println!("⚠️  nvme format failed, trying sanitize...");
+
+        // Method 2: nvme sanitize with crypto-erase
+        if self.try_nvme_sanitize_crypto().is_ok() {
+            println!("✅ ISE via nvme sanitize completed successfully");
+            return Ok(());
+        }
+
+        Err(anyhow!("All ISE methods failed"))
+    }
+
+    /// Try ISE via nvme format command
+    fn try_nvme_format_crypto(&self) -> Result<()> {
         let output = Command::new("nvme")
             .arg("format")
             .arg(&self.device_path)
-            .arg("-s")  // Secure erase
+            .arg("-s")  // Secure erase setting
             .arg("2")   // Cryptographic erase
             .output()?;
 
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("Instant Secure Erase failed: {}", err));
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(anyhow!("nvme format failed"))
         }
+    }
 
-        println!("Instant Secure Erase completed successfully");
-        Ok(())
+    /// Try ISE via nvme sanitize command
+    fn try_nvme_sanitize_crypto(&self) -> Result<()> {
+        let output = Command::new("nvme")
+            .arg("sanitize")
+            .arg(&self.device_path)
+            .arg("-a")  // Sanitize action
+            .arg("2")   // Cryptographic erase
+            .output()?;
+
+        if output.status.success() {
+            // Wait for sanitize to complete
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            Ok(())
+        } else {
+            Err(anyhow!("nvme sanitize failed"))
+        }
     }
 
     /// Overwrite with 3D XPoint-specific patterns

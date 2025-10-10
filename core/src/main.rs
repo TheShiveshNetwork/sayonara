@@ -1461,6 +1461,46 @@ async fn select_and_execute_wipe(
     drive_info: &DriveInfo,
     config: &WipeConfig,
 ) -> Result<()> {
+    // Check if this is an advanced drive type that needs specialized handling
+    match drive_info.drive_type {
+        DriveType::SMR | DriveType::Optane | DriveType::HybridSSHD |
+        DriveType::EMMC | DriveType::UFS => {
+            // Use the advanced wipe orchestrator for these drive types
+            println!("🔬 Detected advanced drive type: {:?}", drive_info.drive_type);
+            println!("Using specialized wipe strategy...\n");
+
+            use sayonara_wipe::WipeOrchestrator;
+            let orchestrator = WipeOrchestrator::new(device.to_string(), config.clone())
+                .map_err(|e| anyhow::anyhow!("Orchestrator initialization failed: {}", e))?;
+
+            orchestrator.execute().await
+                .map_err(|e| anyhow::anyhow!("Advanced wipe failed: {}", e))?;
+
+            return Ok(());
+        }
+        DriveType::NVMe => {
+            // Check if it's an advanced NVMe (ZNS, multi-namespace, etc.)
+            use sayonara_wipe::drives::nvme_advanced::NVMeAdvanced;
+            if NVMeAdvanced::detect_advanced_features(device).unwrap_or(false) {
+                println!("🔬 Detected advanced NVMe features (ZNS/Multi-namespace)");
+                println!("Using specialized wipe strategy...\n");
+
+                use sayonara_wipe::WipeOrchestrator;
+                let orchestrator = WipeOrchestrator::new(device.to_string(), config.clone())
+                    .map_err(|e| anyhow::anyhow!("Orchestrator initialization failed: {}", e))?;
+
+                orchestrator.execute().await
+                    .map_err(|e| anyhow::anyhow!("Advanced NVMe wipe failed: {}", e))?;
+
+                return Ok(());
+            }
+            // Otherwise fall through to standard NVMe handling below
+        }
+        _ => {
+            // Standard drives - use existing implementations
+        }
+    }
+
     // Auto-select best method based on capabilities and config
     let algorithm = if config.algorithm == Algorithm::SecureErase {
         // Auto-select based on drive capabilities

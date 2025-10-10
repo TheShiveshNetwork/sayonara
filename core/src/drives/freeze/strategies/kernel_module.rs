@@ -106,16 +106,34 @@ impl KernelModule {
 
     /// Build the kernel module if needed
     fn build_module(&self) -> Result<()> {
-        let module_src_dir = "/usr/local/src/sayonara-wipe/kernel_module";
+        // Try to find module source in the codebase first
+        let codebase_src = std::env::current_dir()
+            .ok()
+            .and_then(|d| {
+                let path = d.join("src/drives/freeze/kernel_module");
+                if path.exists() {
+                    Some(path)
+                } else {
+                    None
+                }
+            });
 
-        if !Path::new(module_src_dir).exists() {
-            return Err(anyhow!("Kernel module source not found"));
-        }
+        let module_src_dir = if let Some(path) = codebase_src {
+            path.to_string_lossy().to_string()
+        } else {
+            // Fall back to system location
+            let fallback = "/usr/local/src/sayonara-wipe/kernel_module";
+            if !Path::new(fallback).exists() {
+                return Err(anyhow!("Kernel module source not found. Expected at: \
+                    src/drives/freeze/kernel_module/ or {}", fallback));
+            }
+            fallback.to_string()
+        };
 
-        println!("      🔨 Building kernel module...");
+        println!("      🔨 Building kernel module from: {}", module_src_dir);
 
         let output = Command::new("make")
-            .current_dir(module_src_dir)
+            .current_dir(&module_src_dir)
             .args(["-j", &num_cpus::get().to_string()])
             .output()?;
 
@@ -131,7 +149,7 @@ impl KernelModule {
             &self.module_path
         )?;
 
-        println!("      ✅ Module built and installed");
+        println!("      ✅ Module built and installed to {}", self.module_path);
         Ok(())
     }
 }

@@ -4,6 +4,10 @@ pub mod verification;
 pub mod crypto;
 pub mod ui;
 pub mod io;
+pub mod wipe_orchestrator;
+
+// Re-export main wipe orchestrator for convenience
+pub use wipe_orchestrator::{WipeOrchestrator, wipe_drive};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
