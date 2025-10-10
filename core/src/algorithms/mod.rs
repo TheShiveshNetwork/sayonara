@@ -1,6 +1,7 @@
 pub mod gutmann;
 pub mod dod;
 pub mod random;
+pub mod zero;
 
 #[cfg(test)]
 mod gutmann_test;
@@ -9,3 +10,4 @@ mod gutmann_test;
 pub use dod::DoDWipe;
 pub use gutmann::GutmannWipe;
 pub use random::RandomWipe;
+pub use zero::ZeroWipe;

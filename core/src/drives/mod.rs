@@ -5,6 +5,7 @@
 // - types/: Drive-type specific implementations (HDD, SSD, NVMe, SMR, etc.)
 // - operations/: Drive operations (SMART, TRIM, HPA/DCO, SED)
 // - freeze/: Freeze detection and mitigation
+// - integrated_wipe.rs: OptimizedIO-integrated wipe operations for advanced drives
 
 // Core functionality
 pub mod detection;
@@ -17,6 +18,9 @@ pub mod operations;
 
 // Freeze mitigation (already well-organized)
 pub mod freeze;
+
+// Integrated wipe operations (Phase 1, Step 5 - I/O Engine Integration)
+pub mod integrated_wipe;
 
 // Re-exports for backward compatibility and convenience
 pub use detection::DriveDetector;
@@ -91,4 +95,15 @@ pub use freeze::{
     // Helper functions
     FreezeMitigationStrategy,
     get_mitigation,
+};
+
+// Integrated wipe operations
+pub use integrated_wipe::{
+    wipe_smr_drive_integrated,
+    wipe_optane_drive_integrated,
+    wipe_hybrid_drive_integrated,
+    wipe_emmc_drive_integrated,
+    wipe_raid_array_integrated,
+    wipe_nvme_advanced_integrated,
+    WipeAlgorithm,
 };
