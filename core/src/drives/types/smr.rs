@@ -393,7 +393,7 @@ impl SMRDrive {
         })
     }
 
-    /// Reset a zone's write pointer
+    /// Reset a zone's write pointer with retry logic
     pub fn reset_zone(&self, zone_number: u32) -> Result<()> {
         if zone_number as usize >= self.zones.len() {
             return Err(anyhow!("Invalid zone number: {}", zone_number));
@@ -406,9 +406,29 @@ impl SMRDrive {
             return Ok(()); // No-op for conventional zones
         }
 
+        // Try multiple methods with fallback
+        // Method 1: blkzone reset (preferred)
+        if self.try_blkzone_reset(zone).is_ok() {
+            return Ok(());
+        }
+
+        // Method 2: sg_reset_wp (SCSI ZBC)
+        if self.try_sg_reset_wp(zone).is_ok() {
+            return Ok(());
+        }
+
+        // Method 3: Zone finish workaround
+        if self.zone_finish_workaround(zone).is_ok() {
+            return Ok(());
+        }
+
+        Err(anyhow!("Failed to reset zone {} after trying all methods", zone_number))
+    }
+
+    /// Try resetting zone via blkzone command
+    fn try_blkzone_reset(&self, zone: &Zone) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
-            // Use blkzone reset
             let output = Command::new("blkzone")
                 .arg("reset")
                 .arg(&self.device_path)
@@ -418,13 +438,44 @@ impl SMRDrive {
                 .arg("1")
                 .output()?;
 
-            if !output.status.success() {
-                let err = String::from_utf8_lossy(&output.stderr);
-                return Err(anyhow!("Zone reset failed: {}", err));
+            if output.status.success() {
+                return Ok(());
             }
         }
 
-        Ok(())
+        Err(anyhow!("blkzone reset failed"))
+    }
+
+    /// Try resetting zone via sg_reset_wp (SCSI ZBC)
+    fn try_sg_reset_wp(&self, zone: &Zone) -> Result<()> {
+        let output = Command::new("sg_reset_wp")
+            .arg("--zone")
+            .arg(format!("{:#x}", zone.zone_start_lba))
+            .arg(&self.device_path)
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(anyhow!("sg_reset_wp failed"))
+        }
+    }
+
+    /// Workaround: Finish zone then reset (for stubborn zones)
+    fn zone_finish_workaround(&self, zone: &Zone) -> Result<()> {
+        // First, try to finish the zone (write to full)
+        let _ = Command::new("sg_zone")
+            .arg("--finish")
+            .arg(format!("{:#x}", zone.zone_start_lba))
+            .arg(&self.device_path)
+            .output();
+
+        // Wait a bit for command to complete
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Then try reset again
+        self.try_blkzone_reset(zone)
+            .or_else(|_| self.try_sg_reset_wp(zone))
     }
 
     /// Reset all zones on the drive

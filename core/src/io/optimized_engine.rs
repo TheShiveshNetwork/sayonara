@@ -7,7 +7,7 @@ use super::platform_specific::{PlatformIO, get_platform_io};
 use std::fs::File;
 use std::sync::Arc;
 use std::time::Instant;
-use crate::drives::smart::SMARTMonitor;
+use crate::drives::operations::smart::SMARTMonitor;
 
 /// I/O Configuration
 #[derive(Debug, Clone)]

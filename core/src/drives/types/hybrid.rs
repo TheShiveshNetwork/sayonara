@@ -174,21 +174,83 @@ impl HybridDrive {
         Ok(())
     }
 
-    /// Temporarily disable cache
+    /// Temporarily disable cache with vendor-specific methods
     pub fn disable_cache(&self) -> Result<()> {
         println!("Disabling SSD cache...");
 
-        // Vendor-specific commands to disable cache
-        // This is simplified - real implementation needs vendor-specific commands
+        // Try vendor-specific methods
+        match self.manufacturer.as_str() {
+            "Seagate" => {
+                if self.try_seagate_cache_disable().is_ok() {
+                    println!("✅ Seagate cache disabled successfully");
+                    return Ok(());
+                }
+            }
+            "Western Digital" | "WDC" => {
+                if self.try_wd_cache_disable().is_ok() {
+                    println!("✅ WD cache disabled successfully");
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
 
+        // Fall back to generic hdparm
+        if self.try_generic_cache_disable().is_ok() {
+            println!("✅ Cache disabled via hdparm");
+            return Ok(());
+        }
+
+        println!("⚠️  Warning: Unable to disable cache completely");
+        Ok(())  // Non-fatal, continue anyway
+    }
+
+    /// Try Seagate-specific cache disable
+    fn try_seagate_cache_disable(&self) -> Result<()> {
+        // Seagate uses SCT commands
+        let output = Command::new("smartctl")
+            .arg("-t")
+            .arg("offline,0")  // Disable SMART cache
+            .arg(&self.device_path)
+            .output()?;
+
+        if output.status.success() {
+            // Also try hdparm
+            self.try_generic_cache_disable()?;
+            Ok(())
+        } else {
+            Err(anyhow!("Seagate cache disable failed"))
+        }
+    }
+
+    /// Try WD-specific cache disable
+    fn try_wd_cache_disable(&self) -> Result<()> {
+        // WD uses vendor-specific ATA commands
+        // First try generic hdparm
+        self.try_generic_cache_disable()?;
+
+        // Then issue WD-specific flush
         let _ = Command::new("hdparm")
-            .arg("-W")
-            .arg("0")  // Disable write caching
+            .arg("-F")  // Flush
             .arg(&self.device_path)
             .output();
 
-        println!("Cache disabled");
         Ok(())
+    }
+
+    /// Try generic cache disable via hdparm
+    fn try_generic_cache_disable(&self) -> Result<()> {
+        let output = Command::new("hdparm")
+            .arg("-W")
+            .arg("0")  // Disable write caching
+            .arg(&self.device_path)
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(anyhow!("hdparm cache disable failed"))
+        }
     }
 
     /// Re-enable cache after wipe

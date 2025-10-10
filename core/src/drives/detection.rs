@@ -9,10 +9,10 @@ use std::path::Path;
 
 // Import submodules for capability detection
 use super::freeze::FreezeMitigation;
-use super::hpa_dco::HPADCOManager;
-use super::sed::SEDManager;
-use super::trim::TrimOperations;
-use super::smart::SMARTMonitor;
+use super::operations::hpa_dco::HPADCOManager;
+use super::operations::sed::SEDManager;
+use super::operations::trim::TrimOperations;
+use super::operations::smart::SMARTMonitor;
 
 pub struct DriveDetector;
 
