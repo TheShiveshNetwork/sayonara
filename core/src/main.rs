@@ -1097,13 +1097,18 @@ async fn list_drives(detailed: bool, include_system: bool) -> Result<()> {
 
     println!("\nDetected drives:");
 
+    let mut filtered_count = 0;
+    let mut displayed_count = 0;
+
     if detailed {
         for drive in drives {
             if !include_system && DriveDetector::is_system_drive(&drive.device_path)? {
+                filtered_count += 1;
                 continue;
             }
 
             print_drive_detailed(&drive)?;
+            displayed_count += 1;
         }
     } else {
         println!("{:<15} {:<20} {:<15} {:<10} {:<10} {:<10}",
@@ -1112,6 +1117,7 @@ async fn list_drives(detailed: bool, include_system: bool) -> Result<()> {
 
         for drive in drives {
             if !include_system && DriveDetector::is_system_drive(&drive.device_path)? {
+                filtered_count += 1;
                 continue;
             }
 
@@ -1127,7 +1133,17 @@ async fn list_drives(detailed: bool, include_system: bool) -> Result<()> {
                      format!("{}GB", size_gb),
                      format!("{:?}", drive.drive_type),
                      health);
+            displayed_count += 1;
         }
+    }
+
+    if filtered_count > 0 {
+        println!("\nℹ️  {} system drive(s) hidden for safety.", filtered_count);
+        println!("   Use --include-system to show all drives.");
+    }
+
+    if displayed_count == 0 && filtered_count > 0 {
+        println!("\n⚠️  No non-system drives found.");
     }
 
     Ok(())
@@ -1371,9 +1387,22 @@ async fn wipe_single_drive(
         Ok(_) => Ok(()),
         Err(e) => {
             warnings.push(format!("Wipe error: {}", e));
+
+            // Check if this was a user interrupt
+            if e.to_string().contains("interrupted") || e.to_string().contains("Interrupted") {
+                eprintln!("\n❌ Wipe operation cancelled by user");
+                return Err(e);
+            }
+
             Err(e)
         }
     };
+
+    // If wipe failed (not interrupted), continue to cleanup but skip verification
+    if wipe_result.is_err() {
+        eprintln!("\n⚠️  Wipe failed, skipping post-wipe operations");
+        return wipe_result;
+    }
 
     // Phase 3: Post-wipe operations
     println!("\nPhase 3: Post-wipe operations");
@@ -2055,11 +2084,6 @@ async fn wipe_drives_parallel(
 // Signal handler for graceful shutdown
 fn setup_signal_handlers() -> Result<()> {
     use signal_hook::{consts::SIGINT, iterator::Signals};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
 
     let mut signals = Signals::new(&[SIGINT])?;
 
@@ -2067,8 +2091,9 @@ fn setup_signal_handlers() -> Result<()> {
         for sig in signals.forever() {
             match sig {
                 SIGINT => {
-                    println!("\nReceived interrupt signal, shutting down gracefully...");
-                    r.store(false, Ordering::SeqCst);
+                    eprintln!("\n\n🛑 Interrupt received! Stopping wipe operation...");
+                    eprintln!("   Please wait for current buffer to finish writing...");
+                    sayonara_wipe::set_interrupted();
                 }
                 _ => {}
             }

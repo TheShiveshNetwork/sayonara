@@ -101,6 +101,9 @@ pub enum IOError {
     #[error("Performance degradation detected: {0}")]
     PerformanceDegraded(String),
 
+    #[error("Operation interrupted by user")]
+    Interrupted,
+
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
 

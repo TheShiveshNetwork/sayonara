@@ -460,8 +460,6 @@ impl SMARTMonitor {
                 }
             }
             None => {
-                eprintln!("⚠️  WARNING: Could not read temperature sensor");
-                eprintln!("   Temperature monitoring will be disabled.");
                 return Err(DriveError::SMARTReadFailed(
                     "Temperature sensor unavailable".to_string()
                 ));

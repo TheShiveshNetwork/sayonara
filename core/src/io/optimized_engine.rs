@@ -151,6 +151,7 @@ pub struct IOHandle {
     config: IOConfig,
     pub(crate) device_path: String,
     bytes_since_temp_check: Arc<std::sync::Mutex<u64>>,
+    temperature_monitoring_disabled: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl IOHandle {
@@ -208,6 +209,11 @@ impl IOHandle {
 
     /// Check temperature and throttle if needed
     fn check_temperature_if_needed(&mut self, bytes_written: u64) -> IOResult<()> {
+        // Skip if temperature monitoring is disabled
+        if self.temperature_monitoring_disabled.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+
         let mut bytes_since_check = self.bytes_since_temp_check.lock().unwrap();
         *bytes_since_check += bytes_written;
 
@@ -223,8 +229,10 @@ impl IOHandle {
                     }
                 }
                 Err(_) => {
-                    // Temperature monitoring failed, continue with warning
-                    // This is logged but doesn't stop the operation
+                    // Temperature monitoring failed - disable it and warn once
+                    eprintln!("⚠️  WARNING: Could not read temperature sensor");
+                    eprintln!("   Temperature monitoring will be disabled.");
+                    self.temperature_monitoring_disabled.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             }
         }
@@ -280,11 +288,14 @@ impl OptimizedIO {
     pub fn open(device_path: &str, config: IOConfig) -> IOResult<IOHandle> {
         let platform_io = get_platform_io();
 
-        println!("🚀 Opening device with optimized I/O");
-        println!("   Platform: {}", platform_io.platform_name());
-        println!("   Direct I/O: {}", config.use_direct_io);
-        println!("   Buffer Size: {} MB", config.initial_buffer_size / (1024 * 1024));
-        println!("   Queue Depth: {}", config.queue_depth);
+        // Only print for large operations (not detection/sampling)
+        if config.initial_buffer_size >= 1024 * 1024 {
+            println!("🚀 Opening device with optimized I/O");
+            println!("   Platform: {}", platform_io.platform_name());
+            println!("   Direct I/O: {}", config.use_direct_io);
+            println!("   Buffer Size: {} MB", config.initial_buffer_size / (1024 * 1024));
+            println!("   Queue Depth: {}", config.queue_depth);
+        }
 
         // Open file with platform-specific optimizations
         let file = platform_io.open_optimized(device_path, config.use_direct_io)?;
@@ -319,6 +330,7 @@ impl OptimizedIO {
             config,
             device_path: device_path.to_string(),
             bytes_since_temp_check: Arc::new(std::sync::Mutex::new(0)),
+            temperature_monitoring_disabled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
     }
 
@@ -335,6 +347,11 @@ impl OptimizedIO {
         let buffer_size = handle.buffer_pool.stats().buffer_size as u64;
 
         while offset < total_size {
+            // Check for interrupt signal
+            if crate::is_interrupted() {
+                return Err(IOError::Interrupted);
+            }
+
             let write_size = (total_size - offset).min(buffer_size);
 
             // Acquire buffer from pool
