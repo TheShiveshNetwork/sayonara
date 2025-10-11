@@ -11,6 +11,20 @@ pub use wipe_orchestrator::{WipeOrchestrator, wipe_drive};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// Global flag for handling Ctrl+C interrupts
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+/// Set the interrupt flag (called by signal handler)
+pub fn set_interrupted() {
+    INTERRUPTED.store(true, Ordering::SeqCst);
+}
+
+/// Check if an interrupt has been received
+pub fn is_interrupted() -> bool {
+    INTERRUPTED.load(Ordering::SeqCst)
+}
 
 // Enhanced error types for better error handling
 #[derive(Error, Debug)]
@@ -50,6 +64,9 @@ pub enum DriveError {
 
     #[error("Unsupported operation: {0}")]
     Unsupported(String),
+
+    #[error("Operation interrupted by user")]
+    Interrupted,
 }
 
 impl From<anyhow::Error> for DriveError {

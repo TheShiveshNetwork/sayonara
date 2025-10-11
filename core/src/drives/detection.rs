@@ -84,10 +84,13 @@ impl DriveDetector {
             );
         }
 
-        // Check for HPA/DCO
-        if let Ok((hpa, dco)) = HPADCOManager::check_hidden_areas(device_path) {
-            capabilities.hpa_enabled = hpa.is_some();
-            capabilities.dco_enabled = dco.is_some();
+        // Check for HPA/DCO (only for ATA/SATA drives - HDD and SSD)
+        // NVMe, USB, RAID drives don't support HPA/DCO
+        if matches!(drive_info.drive_type, DriveType::HDD | DriveType::SSD) {
+            if let Ok((hpa, dco)) = HPADCOManager::check_hidden_areas(device_path) {
+                capabilities.hpa_enabled = hpa.is_some();
+                capabilities.dco_enabled = dco.is_some();
+            }
         }
 
         // Check SED capabilities
