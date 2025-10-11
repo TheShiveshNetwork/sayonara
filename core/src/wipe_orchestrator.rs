@@ -10,6 +10,15 @@ use crate::{
         OptaneDrive,
         HybridDrive,
         NVMeAdvanced,
+        integrated_wipe::{
+            wipe_smr_drive_integrated,
+            wipe_optane_drive_integrated,
+            wipe_hybrid_drive_integrated,
+            wipe_emmc_drive_integrated,
+            wipe_raid_array_integrated,
+            wipe_nvme_advanced_integrated,
+            WipeAlgorithm,
+        },
     },
 };
 use crate::drives::types::emmc::EMMCDevice;
@@ -67,7 +76,7 @@ impl WipeOrchestrator {
 
     /// Wipe SMR (Shingled Magnetic Recording) drive
     async fn wipe_smr_drive(&self) -> DriveResult<()> {
-        println!("📀 Detected SMR drive - using zone-aware wipe strategy");
+        println!("📀 Detected SMR drive - using zone-aware wipe strategy with OptimizedIO");
 
         let smr = SMRDrive::get_zone_configuration(&self.device_path)
             .map_err(|e| DriveError::HardwareCommandFailed(format!("SMR detection failed: {}", e)))?;
@@ -77,18 +86,14 @@ impl WipeOrchestrator {
         println!("Conventional Zones: {}", smr.conventional_zone_count);
         println!();
 
-        // Reset all zones before wiping
-        println!("🔄 Resetting all SMR zones...");
-        smr.reset_all_zones()
-            .map_err(|e| DriveError::HardwareCommandFailed(format!("Zone reset failed: {}", e)))?;
+        // Convert WipeConfig algorithm to WipeAlgorithm
+        let wipe_algorithm = self.convert_to_wipe_algorithm();
 
-        // Perform zone-aware wipe
-        smr.wipe_smr_drive(|offset, size| {
-            self.write_pattern_to_region(offset, size)
-        })
-        .map_err(|e| DriveError::IoError(
-            std::io::Error::new(std::io::ErrorKind::Other, format!("SMR wipe failed: {}", e))
-        ))?;
+        // Use integrated wipe with OptimizedIO engine
+        wipe_smr_drive_integrated(&smr, wipe_algorithm)
+            .map_err(|e| DriveError::IoError(
+                std::io::Error::new(std::io::ErrorKind::Other, format!("SMR wipe failed: {}", e))
+            ))?;
 
         println!("✅ SMR drive wipe completed successfully");
         Ok(())
@@ -96,7 +101,7 @@ impl WipeOrchestrator {
 
     /// Wipe Intel Optane / 3D XPoint drive
     async fn wipe_optane_drive(&self) -> DriveResult<()> {
-        println!("⚡ Detected Intel Optane drive - checking for ISE support");
+        println!("⚡ Detected Intel Optane drive - checking for ISE support with OptimizedIO");
 
         let optane = OptaneDrive::get_configuration(&self.device_path)
             .map_err(|e| DriveError::HardwareCommandFailed(format!("Optane detection failed: {}", e)))?;
@@ -106,7 +111,10 @@ impl WipeOrchestrator {
         println!("ISE Support: {}", if optane.supports_ise { "Yes" } else { "No" });
         println!();
 
-        optane.wipe_optane_drive()
+        // Use integrated wipe with OptimizedIO engine
+        // Prefer hardware ISE if available
+        let use_ise = optane.supports_ise;
+        wipe_optane_drive_integrated(&optane, use_ise)
             .map_err(|e| DriveError::IoError(
                 std::io::Error::new(std::io::ErrorKind::Other, format!("Optane wipe failed: {}", e))
             ))?;
@@ -117,9 +125,9 @@ impl WipeOrchestrator {
 
     /// Wipe Hybrid SSHD drive
     async fn wipe_hybrid_drive(&self) -> DriveResult<()> {
-        println!("🔀 Detected Hybrid SSHD - wiping both HDD and SSD cache");
+        println!("🔀 Detected Hybrid SSHD - wiping both HDD and SSD cache with OptimizedIO");
 
-        let hybrid = HybridDrive::get_configuration(&self.device_path)
+        let mut hybrid = HybridDrive::get_configuration(&self.device_path)
             .map_err(|e| DriveError::HardwareCommandFailed(format!("Hybrid detection failed: {}", e)))?;
 
         println!("HDD: {} GB @ {} RPM",
@@ -129,7 +137,8 @@ impl WipeOrchestrator {
                  hybrid.ssd_cache.cache_size / (1024 * 1024 * 1024));
         println!();
 
-        hybrid.wipe_hybrid_drive()
+        // Use integrated wipe with OptimizedIO engine
+        wipe_hybrid_drive_integrated(&mut hybrid)
             .map_err(|e| DriveError::IoError(
                 std::io::Error::new(std::io::ErrorKind::Other, format!("Hybrid wipe failed: {}", e))
             ))?;
@@ -140,7 +149,7 @@ impl WipeOrchestrator {
 
     /// Wipe eMMC embedded storage
     async fn wipe_emmc_drive(&self) -> DriveResult<()> {
-        println!("📱 Detected eMMC device - wiping all partitions");
+        println!("📱 Detected eMMC device - wiping all partitions with OptimizedIO");
 
         let emmc = EMMCDevice::get_configuration(&self.device_path)
             .map_err(|e| DriveError::HardwareCommandFailed(format!("eMMC detection failed: {}", e)))?;
@@ -149,7 +158,10 @@ impl WipeOrchestrator {
         println!("Boot Partitions: {}", emmc.boot_partitions.len());
         println!();
 
-        emmc.wipe_emmc()
+        // Use integrated wipe with OptimizedIO engine
+        // Try hardware erase first, fall back to software if not supported
+        let use_hardware = true; // Can be made configurable
+        wipe_emmc_drive_integrated(&emmc, use_hardware)
             .map_err(|e| DriveError::IoError(
                 std::io::Error::new(std::io::ErrorKind::Other, format!("eMMC wipe failed: {}", e))
             ))?;
@@ -185,22 +197,27 @@ impl WipeOrchestrator {
 
         // Check if this is an advanced NVMe with ZNS, multiple namespaces, etc.
         if NVMeAdvanced::detect_advanced_features(&self.device_path).unwrap_or(false) {
-            println!("🔬 Advanced NVMe features detected, using controller-wide sanitize");
+            println!("🔬 Advanced NVMe features detected, using OptimizedIO with namespace support");
             println!();
 
-            // Use controller-wide sanitize for advanced NVMe
-            let output = std::process::Command::new("nvme")
-                .arg("sanitize")
-                .arg(&self.device_path)
-                .arg("-a").arg("2")  // Cryptographic erase
-                .arg("--no-uuid")    // Apply to all namespaces
-                .output()
-                .map_err(|e| DriveError::HardwareCommandFailed(format!("NVMe sanitize failed: {}", e)))?;
+            // Get advanced NVMe configuration
+            let nvme_advanced = NVMeAdvanced::get_configuration(&self.device_path)
+                .map_err(|e| DriveError::HardwareCommandFailed(format!("NVMe advanced detection failed: {}", e)))?;
 
-            if output.status.success() {
-                println!("✅ Advanced NVMe wipe completed successfully");
-                return Ok(());
-            }
+            println!("Namespaces: {}", nvme_advanced.namespaces.len());
+            println!("ZNS Support: {}", nvme_advanced.zns_support);
+            println!();
+
+            // Use integrated wipe with OptimizedIO engine
+            // Prefer hardware format, but can fall back to software
+            let use_format = true; // Can be made configurable
+            wipe_nvme_advanced_integrated(&nvme_advanced, use_format)
+                .map_err(|e| DriveError::IoError(
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("Advanced NVMe wipe failed: {}", e))
+                ))?;
+
+            println!("✅ Advanced NVMe wipe completed successfully");
+            return Ok(());
         }
 
         // Fall back to basic NVMe wipe via sanitize command
@@ -262,7 +279,7 @@ impl WipeOrchestrator {
 
     /// Wipe RAID array member
     async fn wipe_raid_member(&self) -> DriveResult<()> {
-        println!("🔗 Detected RAID array member");
+        println!("🔗 Detected RAID array member - using OptimizedIO");
         println!("⚠️  Warning: Wiping individual RAID members will destroy the array!");
 
         // Check if user confirmed
@@ -275,24 +292,35 @@ impl WipeOrchestrator {
         // Import raid module
         use crate::drives::types::raid::RAIDArray;
 
-        // Wipe metadata first
+        // Get RAID configuration
         let raid = RAIDArray::get_configuration(&self.device_path)
             .map_err(|e| DriveError::HardwareCommandFailed(format!("RAID detection failed: {}", e)))?;
 
         println!("RAID Type: {:?}", raid.raid_type);
-        println!("Wiping RAID metadata...");
+        println!("Members: {}", raid.member_drives.len());
+        println!();
 
-        raid.wipe_metadata()
+        // Use integrated wipe with OptimizedIO engine
+        // This will wipe all members and metadata
+        let wipe_metadata = true;
+        wipe_raid_array_integrated(&raid, wipe_metadata)
             .map_err(|e| DriveError::IoError(
-                std::io::Error::new(std::io::ErrorKind::Other, format!("Metadata wipe failed: {}", e))
+                std::io::Error::new(std::io::ErrorKind::Other, format!("RAID wipe failed: {}", e))
             ))?;
-
-        // Then wipe the drive normally based on its underlying type
-        println!("Wiping drive data...");
-        self.wipe_hdd_drive().await?;
 
         println!("✅ RAID member wipe completed successfully");
         Ok(())
+    }
+
+    /// Convert WipeConfig algorithm to WipeAlgorithm for integrated wipe functions
+    fn convert_to_wipe_algorithm(&self) -> WipeAlgorithm {
+        match self.config.algorithm {
+            Algorithm::Zero => WipeAlgorithm::Zeros,
+            Algorithm::Random => WipeAlgorithm::Random,
+            Algorithm::DoD5220 => WipeAlgorithm::Random, // DoD uses multiple passes with random
+            Algorithm::Gutmann => WipeAlgorithm::Random,  // Gutmann uses complex patterns
+            _ => WipeAlgorithm::Random, // Default to random for security
+        }
     }
 
     /// Write pattern to a specific region (used by SMR and other specialized wipers)
